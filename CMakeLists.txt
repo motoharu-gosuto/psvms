@@ -38,6 +38,7 @@ target_link_libraries(psvms
   SceThreadmgrForDriver_stub
   SceModulemgrForKernel_stub
   SceKernelSuspendForDriver_stub
+  SceCpuForDriver_stub
   taihenForKernel_stub
   taihenModuleUtils_stub
 )
