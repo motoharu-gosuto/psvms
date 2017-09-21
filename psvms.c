@@ -165,7 +165,20 @@ int get_card_string()
 #define SceSblAuthMgrForKernel_NID 0x7ABF5135
 
 typedef int (execute_dmac5_command_0x01_01be0374_t)(char *src, char *dst, int size, int key_slot, int key_size, int arg_4);
+typedef int (execute_dmac5_command_0x02_8b4700cb_t)(char *src, char *dst, int size, int key_slot, int key_size, int arg_4);
+typedef int (execute_dmac5_command_0x41_37dd5cbf_t)(char *src, char *dst, int size, int key_slot, int key_size, int arg_4);
+typedef int (execute_dmac5_command_0x42_8eafb18a_t)(char *src, char *dst, int size, int key_slot, int key_size, int arg_4);
+typedef int (execute_dmac5_command_0x49_05b38698_t)(char *src, char *dst, int size, int key_slot, int key_size, char* iv, int arg_8);
+typedef int (execute_dmac5_command_0x4A_926bccf0_t)(char *src, char *dst, int size, int key_slot, int key_size, char* iv, int arg_8);
+
 execute_dmac5_command_0x01_01be0374_t* execute_dmac5_command_0x01_01be0374 = 0;
+execute_dmac5_command_0x02_8b4700cb_t* execute_dmac5_command_0x02_8b4700cb = 0;
+
+execute_dmac5_command_0x41_37dd5cbf_t* execute_dmac5_command_0x41_37dd5cbf = 0;
+execute_dmac5_command_0x42_8eafb18a_t* execute_dmac5_command_0x42_8eafb18a = 0;
+
+execute_dmac5_command_0x49_05b38698_t* execute_dmac5_command_0x49_05b38698 = 0;
+execute_dmac5_command_0x4A_926bccf0_t* execute_dmac5_command_0x4A_926bccf0 = 0;
 
 int initialize_functions()
 {
@@ -178,6 +191,56 @@ int initialize_functions()
   }
   
   FILE_GLOBAL_WRITE_LEN("set execute_dmac5_command_0x01_01be0374\n");
+
+  res = module_get_export_func(KERNEL_PID, "SceSblSsMgr", SceSblSsMgrForDriver_NID, 0x8b4700cb, (uintptr_t*)&execute_dmac5_command_0x02_8b4700cb);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to set execute_dmac5_command_0x02_8b4700cb : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+    return -1;
+  }
+  
+  FILE_GLOBAL_WRITE_LEN("set execute_dmac5_command_0x02_8b4700cb\n");
+
+  res = module_get_export_func(KERNEL_PID, "SceSblSsMgr", SceSblSsMgrForDriver_NID, 0x37dd5cbf, (uintptr_t*)&execute_dmac5_command_0x41_37dd5cbf);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to set execute_dmac5_command_0x41_37dd5cbf : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+    return -1;
+  }
+  
+  FILE_GLOBAL_WRITE_LEN("set execute_dmac5_command_0x41_37dd5cbf\n");
+
+  res = module_get_export_func(KERNEL_PID, "SceSblSsMgr", SceSblSsMgrForDriver_NID, 0x8eafb18a, (uintptr_t*)&execute_dmac5_command_0x42_8eafb18a);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to set execute_dmac5_command_0x42_8eafb18a : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+    return -1;
+  }
+  
+  FILE_GLOBAL_WRITE_LEN("set execute_dmac5_command_0x42_8eafb18a\n");
+
+  res = module_get_export_func(KERNEL_PID, "SceSblSsMgr", SceSblSsMgrForDriver_NID, 0x05b38698, (uintptr_t*)&execute_dmac5_command_0x49_05b38698);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to set execute_dmac5_command_0x49_05b38698 : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+    return -1;
+  }
+  
+  FILE_GLOBAL_WRITE_LEN("set execute_dmac5_command_0x49_05b38698\n");
+
+  res = module_get_export_func(KERNEL_PID, "SceSblSsMgr", SceSblSsMgrForDriver_NID, 0x926bccf0, (uintptr_t*)&execute_dmac5_command_0x4A_926bccf0);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to set execute_dmac5_command_0x4A_926bccf0 : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+    return -1;
+  }
+  
+  FILE_GLOBAL_WRITE_LEN("set execute_dmac5_command_0x4A_926bccf0\n");
 
   return 0;
 }
@@ -363,7 +426,10 @@ int set_key(char* key, int index)
   return 0;
 }
 
-int test_dmac5()
+//good online generator
+//http://aes.online-domain-tools.com/
+
+int test_dmac5_1_2()
 {
   char key[0x20] = {0};
   int res = set_key(key, DMAC5_KEYRING_KEY_1D);
@@ -388,7 +454,7 @@ int test_dmac5()
   }
   else
   {
-    snprintf(sprintfBuffer, 256, "executed dmac5 for slot : %x\n", DMAC5_KEYRING_KEY_1D);
+    snprintf(sprintfBuffer, 256, "executed dmac5 cmd 1 for slot : %x\n", DMAC5_KEYRING_KEY_1D);
     FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
   }
 
@@ -398,6 +464,183 @@ int test_dmac5()
   if(memcmp(expected, output, 0x20) == 0)
   {
     FILE_GLOBAL_WRITE_LEN("Confirmed AES-128-ECB encrypt\n");
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("Unexpected result\n");
+  }
+
+  print_bytes(output, 0x40);
+
+  char dec[0x40];
+  memset(dec, 0, 0x40);
+
+  res = execute_dmac5_command_0x02_8b4700cb(output, dec, 0x20, DMAC5_KEYRING_KEY_1D, 0x80, 1);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to execute_dmac5_command_0x02_8b4700cb : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  }
+  else
+  {
+    snprintf(sprintfBuffer, 256, "executed dmac5 cmd 2 for slot : %x\n", DMAC5_KEYRING_KEY_1D);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  }
+
+  if(memcmp(dec, input, 0x20) == 0)
+  {
+    FILE_GLOBAL_WRITE_LEN("Confirmed AES-128-ECB decrypt\n");
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("Unexpected result\n");
+  }
+
+  return 0;
+}
+
+int test_dmac5_41_42()
+{
+  char key[0x20] = {0};
+  int res = set_key(key, DMAC5_KEYRING_KEY_1D);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to set_key : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+    return -1;
+  }
+
+  char* input = "The gray fox jumped over the dog";
+  char output[0x40];
+  memset(output, 0, 0x40);
+
+  int size = strnlen(input, 0x40);
+
+  res = execute_dmac5_command_0x41_37dd5cbf(input, output, size, DMAC5_KEYRING_KEY_1D, 0xC0, 1);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to execute_dmac5_command_0x41_37dd5cbf : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  }
+  else
+  {
+    snprintf(sprintfBuffer, 256, "executed dmac5 cmd 41 for slot : %x\n", DMAC5_KEYRING_KEY_1D);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  }
+
+  char expected[0x20] = {0x93,	0x64,	0x35,	0x52,	0x08,	0xb8,	0x5e,	0xb2,	0xe8,	0xd0,	0x6d,	0xba,	0x0c,	0x81,	0x55,	0x0d,
+                         0x47,	0xee,	0xa3,	0x74,	0x2e,	0x56,	0xe7,	0x36,	0x41,	0x00,	0x7f,	0x7c,	0xf7,	0x92,	0x92,	0x7e,};
+
+  if(memcmp(expected, output, 0x20) == 0)
+  {
+    FILE_GLOBAL_WRITE_LEN("Confirmed DES-?-ECB encrypt\n");
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("Unexpected result\n");
+  }
+
+  print_bytes(output, 0x40);
+
+  char dec[0x40];
+  memset(dec, 0, 0x40);
+
+  res = execute_dmac5_command_0x42_8eafb18a(output, dec, 0x20, DMAC5_KEYRING_KEY_1D, 0xC0, 1);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to execute_dmac5_command_0x42_8eafb18a : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  }
+  else
+  {
+    snprintf(sprintfBuffer, 256, "executed dmac5 cmd 42 for slot : %x\n", DMAC5_KEYRING_KEY_1D);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  }
+
+  if(memcmp(dec, input, 0x20) == 0)
+  {
+    FILE_GLOBAL_WRITE_LEN("Confirmed DES-?-ECB decrypt\n");
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("Unexpected result\n");
+  }
+
+  return 0;
+}
+
+int test_dmac5_49_4A()
+{
+  char key[0x20] = {0};
+  int res = set_key(key, DMAC5_KEYRING_KEY_1D);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to set_key : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+    return -1;
+  }
+
+  char* input = "The gray fox jumped over the dog";
+  char output[0x40];
+  memset(output, 0, 0x40);
+
+  int size = strnlen(input, 0x40);
+
+  char iv[8];
+  memset(iv, 0, 0x8);
+  iv[0] = 1;
+
+  res = execute_dmac5_command_0x49_05b38698(input, output, size, DMAC5_KEYRING_KEY_1D, 0xC0, iv, 1);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to execute_dmac5_command_0x49_05b38698 : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  }
+  else
+  {
+    snprintf(sprintfBuffer, 256, "executed dmac5 cmd 49 for slot : %x\n", DMAC5_KEYRING_KEY_1D);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  }
+
+  char expected[0x20] = {0x4b,	0x7a,	0xa6,	0x0a,	0xd2,	0x95,	0x15,	0xbf,	0x1c,	0x42,	0xff,	0x5a,	0x72,	0xcb,	0x92,	0xac,
+                         0x50,	0x49,	0x61,	0x59,	0x77,	0xe4,	0xec,	0xef,	0xc5,	0xe1,	0x9d,	0xa3,	0x20,	0xb2,	0x6a,	0x97,};
+
+  if(memcmp(expected, output, 0x20) == 0)
+  {
+    FILE_GLOBAL_WRITE_LEN("Confirmed DES-?-CBC encrypt\n");
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("Unexpected result\n");
+  }
+
+  FILE_GLOBAL_WRITE_LEN("data\n");
+  print_bytes(output, 0x40);
+  FILE_GLOBAL_WRITE_LEN("iv\n");
+  print_bytes(iv, 0x08);
+
+  char dec[0x40];
+  memset(dec, 0, 0x40);
+
+  //have to set again - it will be cleared
+  memset(iv, 0, 0x8);
+  iv[0] = 1;
+
+  res = execute_dmac5_command_0x4A_926bccf0(output, dec, 0x20, DMAC5_KEYRING_KEY_1D, 0xC0, iv, 1);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to execute_dmac5_command_0x4A_926bccf0 : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  }
+  else
+  {
+    snprintf(sprintfBuffer, 256, "executed dmac5 cmd 4A for slot : %x\n", DMAC5_KEYRING_KEY_1D);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  }
+
+  if(memcmp(dec, input, 0x20) == 0)
+  {
+    FILE_GLOBAL_WRITE_LEN("Confirmed DES-?-CBC decrypt\n");
   }
   else
   {
@@ -418,7 +661,9 @@ int module_start(SceSize argc, const void *args)
   if(init_keyring() < 0)
     return SCE_KERNEL_START_SUCCESS;
 
-  test_dmac5();
+  //test_dmac5_1_2();
+  //test_dmac5_41_42();
+  test_dmac5_49_4A();
 
   return SCE_KERNEL_START_SUCCESS;
 }
