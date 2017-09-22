@@ -176,6 +176,9 @@ typedef int (execute_dmac5_command_0x4A_926bccf0_t)(char *src, char *dst, int si
 typedef int (execute_dmac5_command_0x01_c517770d_t)(char *src, char *dst, int size, char* key, int key_size, int arg_4);
 typedef int (execute_dmac5_command_0x02_7c978be7_t)(char *src, char *dst, int size, char* key, int key_size, int arg_4);
 
+typedef int (execute_dmac5_command_0x01_0f7d28af_t)(char *src, char *dst, int size, char *key, int key_size, int key_id, int arg_8);
+typedef int (execute_dmac5_command_0x02_197acf6f_t)(char *src, char *dst, int size, char *key, int key_size, int key_id, int arg_8);
+
 execute_dmac5_command_0x01_01be0374_t* execute_dmac5_command_0x01_01be0374 = 0;
 execute_dmac5_command_0x02_8b4700cb_t* execute_dmac5_command_0x02_8b4700cb = 0;
 
@@ -187,6 +190,9 @@ execute_dmac5_command_0x4A_926bccf0_t* execute_dmac5_command_0x4A_926bccf0 = 0;
 
 execute_dmac5_command_0x01_c517770d_t* execute_dmac5_command_0x01_c517770d = 0;
 execute_dmac5_command_0x02_7c978be7_t* execute_dmac5_command_0x02_7c978be7 = 0;
+
+execute_dmac5_command_0x01_0f7d28af_t* execute_dmac5_command_0x01_0f7d28af = 0;
+execute_dmac5_command_0x02_197acf6f_t* execute_dmac5_command_0x02_197acf6f = 0;
 
 int initialize_functions()
 {
@@ -270,59 +276,30 @@ int initialize_functions()
   
   FILE_GLOBAL_WRITE_LEN("set execute_dmac5_command_0x02_7c978be7\n");
 
-  return 0;
-}
-
-tai_hook_ref_t sceSblAuthMgrSetDmac5Key_hook_ref = 0;
-SceUID sceSblAuthMgrSetDmac5Key_hook_id = 0;
-
-int sceSblAuthMgrSetDmac5Key_hook(char *key, int key_size, int slot_id, int key_id)
-{
-  int res = TAI_CONTINUE(int, sceSblAuthMgrSetDmac5Key_hook_ref, key, key_size, slot_id, key_id);
-
-  snprintf(sprintfBuffer, 256, "sceSblAuthMgrSetDmac5Key_hook : %x %x %x %x %x\n", key, key_size, slot_id, key_id, res);
-  FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
-
-  return res;
-}
-
-int initialize_hooks()
-{
-  tai_module_info_t sbl_auth_mgr_info;
-  sbl_auth_mgr_info.size = sizeof(tai_module_info_t);
-  if(taiGetModuleInfoForKernel(KERNEL_PID, "SceSblAuthMgr", &sbl_auth_mgr_info) >= 0)
+  res = module_get_export_func(KERNEL_PID, "SceSblSsMgr", SceSblSsMgrForDriver_NID, 0x0f7d28af, (uintptr_t*)&execute_dmac5_command_0x01_0f7d28af);
+  if(res < 0)
   {
-    sceSblAuthMgrSetDmac5Key_hook_id = taiHookFunctionExportForKernel(KERNEL_PID, &sceSblAuthMgrSetDmac5Key_hook_ref, "SceSblAuthMgr", SceSblAuthMgrForKernel_NID, 0x122acdea, sceSblAuthMgrSetDmac5Key_hook);
-
-    if(sceSblAuthMgrSetDmac5Key_hook_id < 0)
-      FILE_GLOBAL_WRITE_LEN("Failed to init sceSblAuthMgrSetDmac5Key_hook\n");
-    else
-      FILE_GLOBAL_WRITE_LEN("Init sceSblAuthMgrSetDmac5Key_hook\n");
+    snprintf(sprintfBuffer, 256, "failed to set execute_dmac5_command_0x01_0f7d28af : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+    return -1;
   }
+  
+  FILE_GLOBAL_WRITE_LEN("set execute_dmac5_command_0x01_0f7d28af\n");
 
-  return 0;
-}
-
-int deinitialize_hooks()
-{
-  if(sceSblAuthMgrSetDmac5Key_hook_id > 0)
+  res = module_get_export_func(KERNEL_PID, "SceSblSsMgr", SceSblSsMgrForDriver_NID, 0x197acf6f, (uintptr_t*)&execute_dmac5_command_0x02_197acf6f);
+  if(res < 0)
   {
-    int res = taiHookReleaseForKernel(sceSblAuthMgrSetDmac5Key_hook_id, sceSblAuthMgrSetDmac5Key_hook_ref);
-    
-    if(res < 0)
-    {
-      FILE_GLOBAL_WRITE_LEN("Failed to deinit sceSblAuthMgrSetDmac5Key_hook\n");
-    }
-    else
-    {
-      FILE_GLOBAL_WRITE_LEN("Deinit sceSblAuthMgrSetDmac5Key_hook\n");
-    }
-    
-    sceSblAuthMgrSetDmac5Key_hook_id = -1;
+    snprintf(sprintfBuffer, 256, "failed to set execute_dmac5_command_0x02_197acf6f : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+    return -1;
   }
+  
+  FILE_GLOBAL_WRITE_LEN("set execute_dmac5_command_0x02_197acf6f\n");
 
   return 0;
 }
+
+//==========================================
 
 #define SceDmacmgrKeyringReg_PADDR 0xE04E0000
 #define SCE_KERNEL_MEMBLOCK_TYPE_UNK1 0x20100206
@@ -450,6 +427,90 @@ int set_key(char* key, int index)
   //int res = ksceKernelCpuDcacheAndL2InvalidateRange(ofst, DMAC5_KEYSIZE);
   //if(res < 0)
   //  return res;
+
+  return 0;
+}
+
+//===========================================
+
+SceUID slot_table_start_patch = -1;
+SceUID slot_table_end_patch = -1;
+
+int enable_slot_table_patches()
+{
+  tai_module_info_t sbl_ss_mgr_info;
+  sbl_ss_mgr_info.size = sizeof(tai_module_info_t);
+  if(taiGetModuleInfoForKernel(KERNEL_PID, "SceSblSsMgr", &sbl_ss_mgr_info) >= 0)
+  {
+    char start_patch[2] = {0x12, 0x25};
+    slot_table_start_patch = taiInjectDataForKernel(KERNEL_PID, sbl_ss_mgr_info.modid, 0, 0x00B9A882 - 0x00B98000, start_patch, 2); //patch MOVS R5, #0xC to MOVS R5, #0x12
+
+    char end_patch[2] = {0x1E, 0x2D};
+    slot_table_end_patch = taiInjectDataForKernel(KERNEL_PID, sbl_ss_mgr_info.modid, 0, 0x00B9A8A6 - 0x00B98000, end_patch, 2); //patch CMP R5, #0x18 to CMP R5, #0x1E
+  }
+
+  return 0;
+}
+
+int disable_slot_table_patches()
+{
+  if(slot_table_start_patch >=0)
+  {
+    taiInjectReleaseForKernel(slot_table_start_patch);
+    slot_table_start_patch = -1;
+  }
+
+  if(slot_table_end_patch >=0)
+  {
+    taiInjectReleaseForKernel(slot_table_end_patch);
+    slot_table_end_patch = -1;
+  }
+
+  return 0;
+}
+
+//===========================================
+
+int disable_key_slot(int slot_id)
+{
+  if(slot_id < 0x12)
+    return -1;
+
+  int rel_slot_idx = slot_id - 0x12;
+
+  tai_module_info_t info;
+  info.size = sizeof(tai_module_info_t);
+  if (taiGetModuleInfoForKernel(KERNEL_PID, "SceSblSsMgr", &info) >= 0)
+  {
+    uintptr_t addr = 0;
+    int ofstRes = module_get_offset(KERNEL_PID, info.modid, 1, 0x44 + 0x234 + rel_slot_idx * 0x2C, &addr);
+    if(ofstRes == 0)
+    {
+      *((char*)addr) = 1;
+    }
+  }
+
+  return 0;
+}
+
+int enable_key_slot(int slot_id)
+{
+  if(slot_id < 0x12)
+    return -1;
+
+  int rel_slot_idx = slot_id - 0x12;
+
+  tai_module_info_t info;
+  info.size = sizeof(tai_module_info_t);
+  if (taiGetModuleInfoForKernel(KERNEL_PID, "SceSblSsMgr", &info) >= 0)
+  {
+    uintptr_t addr = 0;
+    int ofstRes = module_get_offset(KERNEL_PID, info.modid, 1, 0x44 + 0x234 + rel_slot_idx * 0x2C, &addr);
+    if(ofstRes == 0)
+    {
+      *((char*)addr) = 0;
+    }
+  }
 
   return 0;
 }
@@ -844,6 +905,121 @@ int test_dmac5_1_2_256_key()
 
 //============================================
 
+int g_disable_set_key = 0;
+char g_key[0x20] = {0};
+int g_key_index = 0;
+
+#define DMAC5_KEY_ID_0 0
+
+//if we would want to test this crypto function we need to hook sceSblAuthMgrSetDmac5Key and set our key here
+//however by default - 0xC slot_id is used. and max slot is 0x17
+//then slot_id is returned from the wrapper function and used everywhere
+//this is 0xC-0x17 is an unchangeable range of slots
+//however this range can be patched
+
+int enable_1d_slot_id(char* key)
+{
+  //first we change slot id range
+  enable_slot_table_patches();
+
+  //then way to go around is to disable all key slots till 0x1D
+  for(int i = 0x12; i < DMAC5_KEYRING_KEY_1D; i++)
+    disable_key_slot(i);
+
+  //then we indicate to the hook that defalt set key behavior should be overrided
+  //with specified key and slot id
+  g_disable_set_key = 1;
+  memcpy(g_key, key, 0x20);
+  g_key_index = DMAC5_KEYRING_KEY_1D;
+
+  return 0;
+}
+
+int disable_1d_slot_id()
+{
+  g_disable_set_key = 0;
+  
+  //enable slots back
+  for(int i = 0x12; i < DMAC5_KEYRING_KEY_1D; i++)
+    enable_key_slot(i);
+
+  //restore slot id range
+  disable_slot_table_patches();
+
+  return 0;
+}
+
+int test_dmac5_1_2_128_key_id()
+{
+  char key[0x20] = {0};
+
+  char* input = "The gray fox jumped over the dog";
+  char output[0x40];
+  memset(output, 0, 0x40);
+
+  int size = strnlen(input, 0x40);
+
+  enable_1d_slot_id(key);
+
+  int res = execute_dmac5_command_0x01_0f7d28af(input, output, size, key, 0x80, DMAC5_KEY_ID_0, 2);
+  
+  disable_1d_slot_id();
+
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to execute_dmac5_command_0x01_0f7d28af : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("executed dmac5 cmd 1\n");
+  }
+
+  char expected[0x20] = {0x7a,	0xca,	0xfe,	0x12,	0xba,	0xd9,	0x97,	0xb7,	0x90,	0x2c,	0xb9,	0xcd,	0xb9,	0x20,	0xbd,	0xd5,
+                         0xc8,	0xd8,	0xee,	0xd9,	0x97,	0x30,	0x47,	0x21,	0x07,	0x2a,	0x0d,	0xe0,	0xdd,	0x1e,	0x0c,	0x4e,};
+
+  if(memcmp(expected, output, 0x20) == 0)
+  {
+    FILE_GLOBAL_WRITE_LEN("Confirmed AES-128-ECB encrypt\n");
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("Unexpected result\n");
+  }  
+
+  char dec[0x40];
+  memset(dec, 0, 0x40);
+
+  enable_1d_slot_id(key);
+
+  res = execute_dmac5_command_0x02_197acf6f(output, dec, 0x20, key, 0x80, DMAC5_KEY_ID_0, 1);
+
+  disable_1d_slot_id();
+
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to execute_dmac5_command_0x02_197acf6f : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("executed dmac5 cmd 2\n");
+  }
+
+  if(memcmp(dec, input, 0x20) == 0)
+  {
+    FILE_GLOBAL_WRITE_LEN("Confirmed AES-128-ECB decrypt\n");
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("Unexpected result\n");
+  }
+
+  return 0;
+}
+
+//============================================
+
 int test_dmac5_41_42()
 {
   char key[0x20] = {0};
@@ -995,6 +1171,74 @@ int test_dmac5_49_4A()
   return 0;
 }
 
+//============================================
+
+tai_hook_ref_t sceSblAuthMgrSetDmac5Key_hook_ref = 0;
+SceUID sceSblAuthMgrSetDmac5Key_hook_id = 0;
+
+int sceSblAuthMgrSetDmac5Key_hook(char *key, int key_size, int slot_id, int key_id)
+{
+  if(g_disable_set_key > 0)
+  {
+    set_key(g_key, g_key_index);
+
+    int res = 0;
+    snprintf(sprintfBuffer, 256, "sceSblAuthMgrSetDmac5Key_hook disable : %x %x %x %x %x\n", key, key_size, slot_id, key_id, res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+
+    return res;
+  }
+  else
+  {
+    int res = TAI_CONTINUE(int, sceSblAuthMgrSetDmac5Key_hook_ref, key, key_size, slot_id, key_id);
+    
+    snprintf(sprintfBuffer, 256, "sceSblAuthMgrSetDmac5Key_hook : %x %x %x %x %x\n", key, key_size, slot_id, key_id, res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  
+    return res;
+  }
+}
+
+int initialize_hooks()
+{
+  tai_module_info_t sbl_auth_mgr_info;
+  sbl_auth_mgr_info.size = sizeof(tai_module_info_t);
+  if(taiGetModuleInfoForKernel(KERNEL_PID, "SceSblAuthMgr", &sbl_auth_mgr_info) >= 0)
+  {
+    sceSblAuthMgrSetDmac5Key_hook_id = taiHookFunctionExportForKernel(KERNEL_PID, &sceSblAuthMgrSetDmac5Key_hook_ref, "SceSblAuthMgr", SceSblAuthMgrForKernel_NID, 0x122acdea, sceSblAuthMgrSetDmac5Key_hook);
+
+    if(sceSblAuthMgrSetDmac5Key_hook_id < 0)
+      FILE_GLOBAL_WRITE_LEN("Failed to init sceSblAuthMgrSetDmac5Key_hook\n");
+    else
+      FILE_GLOBAL_WRITE_LEN("Init sceSblAuthMgrSetDmac5Key_hook\n");
+  }
+
+  return 0;
+}
+
+int deinitialize_hooks()
+{
+  if(sceSblAuthMgrSetDmac5Key_hook_id > 0)
+  {
+    int res = taiHookReleaseForKernel(sceSblAuthMgrSetDmac5Key_hook_id, sceSblAuthMgrSetDmac5Key_hook_ref);
+    
+    if(res < 0)
+    {
+      FILE_GLOBAL_WRITE_LEN("Failed to deinit sceSblAuthMgrSetDmac5Key_hook\n");
+    }
+    else
+    {
+      FILE_GLOBAL_WRITE_LEN("Deinit sceSblAuthMgrSetDmac5Key_hook\n");
+    }
+    
+    sceSblAuthMgrSetDmac5Key_hook_id = -1;
+  }
+
+  return 0;
+}
+
+//============================================
+
 int module_start(SceSize argc, const void *args) 
 {
   if(initialize_hooks() < 0)
@@ -1006,13 +1250,15 @@ int module_start(SceSize argc, const void *args)
   if(init_keyring() < 0)
     return SCE_KERNEL_START_SUCCESS;
 
-  test_dmac5_1_2_128_slot();
-  test_dmac5_1_2_192_slot();
-  test_dmac5_1_2_256_slot();
+  //test_dmac5_1_2_128_slot();
+  //test_dmac5_1_2_192_slot();
+  //test_dmac5_1_2_256_slot();
   
   //test_dmac5_1_2_128_key();
   //test_dmac5_1_2_192_key();
   //test_dmac5_1_2_256_key();
+
+  test_dmac5_1_2_128_key_id();
   
   //test_dmac5_41_42();
   //test_dmac5_49_4A();
