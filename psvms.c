@@ -961,7 +961,7 @@ int test_dmac5_1_2_128_key_id()
 
   enable_1d_slot_id(key);
 
-  int res = execute_dmac5_command_0x01_0f7d28af(input, output, size, key, 0x80, DMAC5_KEY_ID_0, 2);
+  int res = execute_dmac5_command_0x01_0f7d28af(input, output, size, key, 0x80, DMAC5_KEY_ID_0, 1);
   
   disable_1d_slot_id();
 
@@ -1009,6 +1009,144 @@ int test_dmac5_1_2_128_key_id()
   if(memcmp(dec, input, 0x20) == 0)
   {
     FILE_GLOBAL_WRITE_LEN("Confirmed AES-128-ECB decrypt\n");
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("Unexpected result\n");
+  }
+
+  return 0;
+}
+
+int test_dmac5_1_2_192_key_id()
+{
+  char key[0x20] = {0};
+
+  char* input = "The gray fox jumped over the dog";
+  char output[0x40];
+  memset(output, 0, 0x40);
+
+  int size = strnlen(input, 0x40);
+
+  enable_1d_slot_id(key);
+
+  int res = execute_dmac5_command_0x01_0f7d28af(input, output, size, key, 0xC0, DMAC5_KEY_ID_0, 1);
+  
+  disable_1d_slot_id();
+
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to execute_dmac5_command_0x01_0f7d28af : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("executed dmac5 cmd 1\n");
+  }
+
+  char expected[0x20] = {0x56,	0xf1,	0xd6,	0xc9,	0xde,	0x42,	0x5b,	0xa0,	0xa0,	0x8f,	0x9f,	0xad,	0xd1,	0x98,	0x6e,	0xe5,
+                         0x64,	0x1b,	0xc3,	0x72,	0x9c,	0x3b,	0x02,	0x37,	0x57,	0xf4,	0xf9,	0x0e,	0x25,	0xec,	0x79,	0x20,};
+
+  if(memcmp(expected, output, 0x20) == 0)
+  {
+    FILE_GLOBAL_WRITE_LEN("Confirmed AES-192-ECB encrypt\n");
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("Unexpected result\n");
+  }  
+
+  char dec[0x40];
+  memset(dec, 0, 0x40);
+
+  enable_1d_slot_id(key);
+
+  res = execute_dmac5_command_0x02_197acf6f(output, dec, 0x20, key, 0xC0, DMAC5_KEY_ID_0, 1);
+
+  disable_1d_slot_id();
+
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to execute_dmac5_command_0x02_197acf6f : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("executed dmac5 cmd 2\n");
+  }
+
+  if(memcmp(dec, input, 0x20) == 0)
+  {
+    FILE_GLOBAL_WRITE_LEN("Confirmed AES-192-ECB decrypt\n");
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("Unexpected result\n");
+  }
+
+  return 0;
+}
+
+int test_dmac5_1_2_256_key_id()
+{
+  char key[0x20] = {0};
+
+  char* input = "The gray fox jumped over the dog";
+  char output[0x40];
+  memset(output, 0, 0x40);
+
+  int size = strnlen(input, 0x40);
+
+  enable_1d_slot_id(key);
+
+  int res = execute_dmac5_command_0x01_0f7d28af(input, output, size, key, 0x100, DMAC5_KEY_ID_0, 1);
+  
+  disable_1d_slot_id();
+
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to execute_dmac5_command_0x01_0f7d28af : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("executed dmac5 cmd 1\n");
+  }
+
+  char expected[0x20] = {0x24,	0x72,	0xbe,	0x98,	0x0c,	0x96,	0x02,	0xea,	0x59,	0x94,	0x28,	0x5f,	0x61,	0x3b,	0xca,	0xa0,
+                         0x51,	0x99,	0xa1,	0x05,	0x5d,	0x69,	0x1e,	0x57,	0x70,	0xa5,	0x87,	0xa4,	0x6a,	0xc1,	0x60,	0x69,};
+
+  if(memcmp(expected, output, 0x20) == 0)
+  {
+    FILE_GLOBAL_WRITE_LEN("Confirmed AES-256-ECB encrypt\n");
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("Unexpected result\n");
+  }  
+
+  char dec[0x40];
+  memset(dec, 0, 0x40);
+
+  enable_1d_slot_id(key);
+
+  res = execute_dmac5_command_0x02_197acf6f(output, dec, 0x20, key, 0x100, DMAC5_KEY_ID_0, 1);
+
+  disable_1d_slot_id();
+
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to execute_dmac5_command_0x02_197acf6f : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("executed dmac5 cmd 2\n");
+  }
+
+  if(memcmp(dec, input, 0x20) == 0)
+  {
+    FILE_GLOBAL_WRITE_LEN("Confirmed AES-256-ECB decrypt\n");
   }
   else
   {
@@ -1259,6 +1397,8 @@ int module_start(SceSize argc, const void *args)
   //test_dmac5_1_2_256_key();
 
   test_dmac5_1_2_128_key_id();
+  test_dmac5_1_2_192_key_id();
+  test_dmac5_1_2_256_key_id();
   
   //test_dmac5_41_42();
   //test_dmac5_49_4A();
