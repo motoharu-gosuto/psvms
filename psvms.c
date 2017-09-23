@@ -205,6 +205,8 @@ typedef int (execute_dmac5_command_0x3B_1b14658d_t)(char *src, char *dst, int si
 typedef int (execute_dmac5_command_0x3B_ea6acb6d_t)(char *src, char *dst, int size, int slot_id, int key_size, char *iv, int mask_enable, int command_bit);
 typedef int (execute_dmac5_command_0x3B_83b058f5_t)(char *src, char *dst, int size, char *key, int key_size, char *iv, int key_id, int mask_enable, int command_bit);
 
+typedef int (execute_dmac5_command_0x23_92e37656_t)(char *src, char *dst, int size, char *key, char *iv, int key_id, int mask_enable, int command_bit);
+
 execute_dmac5_command_0x01_01be0374_t* execute_dmac5_command_0x01_01be0374 = 0;
 execute_dmac5_command_0x02_8b4700cb_t* execute_dmac5_command_0x02_8b4700cb = 0;
 
@@ -233,6 +235,8 @@ execute_dmac5_command_0x33_79f38554_t* execute_dmac5_command_0x33_79f38554 = 0;
 execute_dmac5_command_0x3B_1b14658d_t* execute_dmac5_command_0x3B_1b14658d = 0;
 execute_dmac5_command_0x3B_ea6acb6d_t* execute_dmac5_command_0x3B_ea6acb6d = 0;
 execute_dmac5_command_0x3B_83b058f5_t* execute_dmac5_command_0x3B_83b058f5 = 0;
+
+execute_dmac5_command_0x23_92e37656_t* execute_dmac5_command_0x23_92e37656 = 0;
 
 int initialize_functions()
 {
@@ -435,6 +439,16 @@ int initialize_functions()
   }
   
   FILE_GLOBAL_WRITE_LEN("set execute_dmac5_command_0x3B_83b058f5\n");
+
+  res = module_get_export_func(KERNEL_PID, "SceSblSsMgr", SceSblSsMgrForDriver_NID, 0x92e37656, (uintptr_t*)&execute_dmac5_command_0x23_92e37656);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to set execute_dmac5_command_0x23_92e37656 : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+    return -1;
+  }
+  
+  FILE_GLOBAL_WRITE_LEN("set execute_dmac5_command_0x23_92e37656\n");
 
   return 0;
 }
@@ -2464,6 +2478,55 @@ int test_aes_256_cmac_key_id()
 
 //============================================
 
+int test_hmac_sha1_key_id()
+{
+  char key[0x20] = {0}; //key length is always set to 0x100 bits
+  int res = set_key(key, DMAC5_KEYRING_KEY_1D);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to set_key : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+    return -1;
+  }
+  
+  char* input = "The gray fox jumped over the dog";
+  char output[0x40];
+  memset(output, 0, 0x40);
+
+  int size = strnlen(input, 0x40);
+
+  //allocating 40 byte iv just in case
+  char iv[0x28];
+  memset(iv, 0, 0x28);
+  iv[0] = 0; //set IV to 0 currently
+
+  enable_1d_slot_id(key);
+
+  res = execute_dmac5_command_0x23_92e37656(input, output, size, key, 0, DMAC5_KEY_ID_0, 1, 0x000); //works without iv
+
+  disable_1d_slot_id();
+
+  //snprintf(sprintfBuffer, 256, "hmac-sha1 result : %x\n", res);
+  //FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+
+  //print_bytes(output, 0x40);
+
+  char expected[0x14] = {0xe3, 0xaf, 0xf3, 0xe8, 0xef, 0x5c, 0xeb, 0xa1, 0x35, 0xa9, 0xe5, 0x53, 0xf7, 0x0e, 0x2d, 0xea, 0xbb, 0x0e, 0xe0, 0x78};
+
+  if(memcmp(expected, output, 0x14) == 0)
+  {
+    FILE_GLOBAL_WRITE_LEN("Confirmed HMAC-SHA-1\n");
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("Unexpected result\n");
+  }
+
+  return 0;
+}
+
+//============================================
+
 tai_hook_ref_t sceSblAuthMgrSetDmac5Key_hook_ref = 0;
 SceUID sceSblAuthMgrSetDmac5Key_hook_id = 0;
 
@@ -2583,6 +2646,8 @@ int module_start(SceSize argc, const void *args)
   //test_aes_128_cmac_key_id();
   //test_aes_192_cmac_key_id();
   //test_aes_256_cmac_key_id();
+
+  test_hmac_sha1_key_id();
 
   return SCE_KERNEL_START_SUCCESS;
 }
