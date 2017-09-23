@@ -200,7 +200,9 @@ typedef int (execute_dmac5_command_0x0A_1901cb5e_t)(char *src, char *dst, int si
 typedef int (execute_dmac5_command_0x03_eb3af9b5_t)(char *src, char *dst, int size, char *iv, int mask_enable, int command_bit);
 typedef int (execute_dmac5_command_0x23_6704d985_t)(char *src, char *dst, int size, char *key, char *iv, int mask_enable, int command_bit);
 typedef int (execute_dmac5_command_0x33_79f38554_t)(char *src, char *dst, int size, char *key, char *iv, int mask_enable, int command_bit);
+
 typedef int (execute_dmac5_command_0x3B_1b14658d_t)(char *src, char *dst, int size, char *key, int key_size, char *iv, int mask_enable, int command_bit);
+typedef int (execute_dmac5_command_0x3B_ea6acb6d_t)(char *src, char *dst, int size, int slot_id, int key_size, char *iv, int mask_enable, int command_bit);
 
 execute_dmac5_command_0x01_01be0374_t* execute_dmac5_command_0x01_01be0374 = 0;
 execute_dmac5_command_0x02_8b4700cb_t* execute_dmac5_command_0x02_8b4700cb = 0;
@@ -228,6 +230,7 @@ execute_dmac5_command_0x23_6704d985_t* execute_dmac5_command_0x23_6704d985 = 0;
 execute_dmac5_command_0x33_79f38554_t* execute_dmac5_command_0x33_79f38554 = 0;
 
 execute_dmac5_command_0x3B_1b14658d_t* execute_dmac5_command_0x3B_1b14658d = 0;
+execute_dmac5_command_0x3B_ea6acb6d_t* execute_dmac5_command_0x3B_ea6acb6d = 0;
 
 int initialize_functions()
 {
@@ -410,6 +413,16 @@ int initialize_functions()
   }
   
   FILE_GLOBAL_WRITE_LEN("set execute_dmac5_command_0x3B_1b14658d\n");
+
+  res = module_get_export_func(KERNEL_PID, "SceSblSsMgr", SceSblSsMgrForDriver_NID, 0xea6acb6d, (uintptr_t*)&execute_dmac5_command_0x3B_ea6acb6d);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to set execute_dmac5_command_0x3B_ea6acb6d : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+    return -1;
+  }
+  
+  FILE_GLOBAL_WRITE_LEN("set execute_dmac5_command_0x3B_ea6acb6d\n");
 
   return 0;
 }
@@ -2053,7 +2066,9 @@ int test_hmac_sha256()
   return 0;
 }
 
-int test_aes_128_cmac()
+//============================================
+
+int test_aes_128_cmac_key()
 {
   char key[0x20] = {0};
 
@@ -2089,7 +2104,7 @@ int test_aes_128_cmac()
   return 0;
 }
 
-int test_aes_192_cmac()
+int test_aes_192_cmac_key()
 {
   char key[0x20] = {0};
 
@@ -2125,7 +2140,7 @@ int test_aes_192_cmac()
   return 0;
 }
 
-int test_aes_256_cmac()
+int test_aes_256_cmac_key()
 {
   char key[0x20] = {0};
 
@@ -2157,6 +2172,137 @@ int test_aes_256_cmac()
   {
     FILE_GLOBAL_WRITE_LEN("Unexpected result\n");
   }
+
+  return 0;
+}
+
+//============================================
+
+int test_aes_128_cmac_slot()
+{
+  char key[0x20] = {0};
+  int res = set_key(key, DMAC5_KEYRING_KEY_1D);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to set_key : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+    return -1;
+  }
+
+  char* input = "The gray fox jumped over the dog";
+  char output[0x40];
+  memset(output, 0, 0x40);
+
+  int size = strnlen(input, 0x40);
+
+  //allocating 40 byte iv just in case
+  char iv[0x28];
+  memset(iv, 0, 0x28);
+  iv[0] = 0; //set IV to 0 currently
+
+  res = execute_dmac5_command_0x3B_ea6acb6d(input, output, size, DMAC5_KEYRING_KEY_1D, 0x80, 0, 1, 0x000);
+
+  //snprintf(sprintfBuffer, 256, "hmac-sha1 result : %x\n", res);
+  //FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+
+  //print_bytes(output, 0x40);
+
+  char expected[0x20] = {0xee, 0xa8, 0x4e, 0xc9, 0xc3, 0x15, 0xda, 0xf8, 0x42, 0xd0, 0xd7, 0x2a, 0x90, 0xb0, 0x24, 0x23,};
+
+  if(memcmp(expected, output, 0x10) == 0)
+  {
+    FILE_GLOBAL_WRITE_LEN("Confirmed AES-128-CMAC\n");
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("Unexpected result\n");
+  }  
+
+  return 0;
+}
+
+int test_aes_192_cmac_slot()
+{
+  char key[0x20] = {0};
+  int res = set_key(key, DMAC5_KEYRING_KEY_1D);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to set_key : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+    return -1;
+  }
+
+  char* input = "The gray fox jumped over the dog";
+  char output[0x40];
+  memset(output, 0, 0x40);
+
+  int size = strnlen(input, 0x40);
+
+  //allocating 40 byte iv just in case
+  char iv[0x28];
+  memset(iv, 0, 0x28);
+  iv[0] = 0; //set IV to 0 currently
+
+  res = execute_dmac5_command_0x3B_ea6acb6d(input, output, size, DMAC5_KEYRING_KEY_1D, 0xC0, 0, 1, 0x000);
+
+  //snprintf(sprintfBuffer, 256, "hmac-sha1 result : %x\n", res);
+  //FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+
+  //print_bytes(output, 0x40);
+
+  char expected[0x20] = {0x6d, 0x88, 0x9d, 0x57, 0x41, 0x5f, 0xca, 0xc4, 0x26, 0x61, 0x1b, 0x15, 0x13, 0x36, 0x9e, 0xd6,};
+
+  if(memcmp(expected, output, 0x10) == 0)
+  {
+    FILE_GLOBAL_WRITE_LEN("Confirmed AES-192-CMAC\n");
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("Unexpected result\n");
+  }  
+
+  return 0;
+}
+
+int test_aes_256_cmac_slot()
+{
+  char key[0x20] = {0};
+  int res = set_key(key, DMAC5_KEYRING_KEY_1D);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to set_key : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+    return -1;
+  }
+
+  char* input = "The gray fox jumped over the dog";
+  char output[0x40];
+  memset(output, 0, 0x40);
+
+  int size = strnlen(input, 0x40);
+
+  //allocating 40 byte iv just in case
+  char iv[0x28];
+  memset(iv, 0, 0x28);
+  iv[0] = 0; //set IV to 0 currently
+
+  res = execute_dmac5_command_0x3B_ea6acb6d(input, output, size, DMAC5_KEYRING_KEY_1D, 0x100, 0, 1, 0x000);
+
+  //snprintf(sprintfBuffer, 256, "hmac-sha1 result : %x\n", res);
+  //FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+
+  //print_bytes(output, 0x40);
+
+  char expected[0x20] = {0x14, 0xf9, 0x4d, 0x0e, 0x15, 0x33, 0x9d, 0x8e, 0x85, 0xa5, 0xc2, 0x2c, 0xe5, 0xdd, 0x55, 0x44,};
+
+  if(memcmp(expected, output, 0x10) == 0)
+  {
+    FILE_GLOBAL_WRITE_LEN("Confirmed AES-256-CMAC\n");
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("Unexpected result\n");
+  }  
 
   return 0;
 }
@@ -2271,9 +2417,13 @@ int module_start(SceSize argc, const void *args)
 
   //test_hmac_sha256();
 
-  test_aes_128_cmac();
-  test_aes_192_cmac();
-  test_aes_256_cmac();
+  //test_aes_128_cmac_key();
+  //test_aes_192_cmac_key();
+  //test_aes_256_cmac_key();
+
+  test_aes_128_cmac_slot();
+  test_aes_192_cmac_slot();
+  test_aes_256_cmac_slot();
 
   return SCE_KERNEL_START_SUCCESS;
 }
