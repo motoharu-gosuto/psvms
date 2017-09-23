@@ -9,6 +9,18 @@
 #include "global_log.h"
 #include "msif_types.h"
 
+//good online generator for AES CBC/ECB, DES CBC/ECB
+//http://aes.online-domain-tools.com/
+
+//AES-CMAC online
+//http://artjomb.github.io/cryptojs-extension/
+
+//other hashes online
+//http://www.sha1-online.com/
+
+//hmac here
+//https://www.liavaag.org/English/SHA-Generator/HMAC/
+
 int get_msif_code_base(uintptr_t* base)
 {
   *base = 0;
@@ -185,6 +197,9 @@ typedef int (execute_dmac5_command_0x0A_121fa69f_t)(char *src, char *dst, int si
 typedef int (execute_dmac5_command_0x09_711c057a_t)(char *src, char *dst, int size, char *key, int key_size, char *iv, int key_id, int arg_C);
 typedef int (execute_dmac5_command_0x0A_1901cb5e_t)(char *src, char *dst, int size, char *key, int key_size, char *iv, int key_id, int arg_C);
 
+typedef int (execute_dmac5_command_0x03_eb3af9b5_t)(char *src, char *dst, int size, char *iv, int mask_flag, int command_bit);
+typedef int (execute_dmac5_command_0x23_6704d985_t)(char *src, char *dst, int size, char *key, char *iv, int mask_enable, int command_bit);
+
 execute_dmac5_command_0x01_01be0374_t* execute_dmac5_command_0x01_01be0374 = 0;
 execute_dmac5_command_0x02_8b4700cb_t* execute_dmac5_command_0x02_8b4700cb = 0;
 
@@ -205,6 +220,9 @@ execute_dmac5_command_0x0A_121fa69f_t* execute_dmac5_command_0x0A_121fa69f = 0;
 
 execute_dmac5_command_0x09_711c057a_t* execute_dmac5_command_0x09_711c057a = 0;
 execute_dmac5_command_0x0A_1901cb5e_t* execute_dmac5_command_0x0A_1901cb5e = 0;
+
+execute_dmac5_command_0x03_eb3af9b5_t* execute_dmac5_command_0x03_eb3af9b5 = 0;
+execute_dmac5_command_0x23_6704d985_t* execute_dmac5_command_0x23_6704d985 = 0;
 
 int initialize_functions()
 {
@@ -347,6 +365,26 @@ int initialize_functions()
   }
   
   FILE_GLOBAL_WRITE_LEN("set execute_dmac5_command_0x0A_1901cb5e\n");
+
+  res = module_get_export_func(KERNEL_PID, "SceSblSsMgr", SceSblSsMgrForDriver_NID, 0xeb3af9b5, (uintptr_t*)&execute_dmac5_command_0x03_eb3af9b5);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to set execute_dmac5_command_0x03_eb3af9b5 : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+    return -1;
+  }
+  
+  FILE_GLOBAL_WRITE_LEN("set execute_dmac5_command_0x03_eb3af9b5\n");
+
+  res = module_get_export_func(KERNEL_PID, "SceSblSsMgr", SceSblSsMgrForDriver_NID, 0x6704d985, (uintptr_t*)&execute_dmac5_command_0x23_6704d985);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to set execute_dmac5_command_0x23_6704d985 : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+    return -1;
+  }
+  
+  FILE_GLOBAL_WRITE_LEN("set execute_dmac5_command_0x23_6704d985\n");
 
   return 0;
 }
@@ -566,9 +604,6 @@ int enable_key_slot(int slot_id)
 
   return 0;
 }
-
-//good online generator
-//http://aes.online-domain-tools.com/
 
 //============================================
 
@@ -1680,7 +1715,7 @@ int test_dmac5_41_42()
 
   if(memcmp(expected, output, 0x20) == 0)
   {
-    FILE_GLOBAL_WRITE_LEN("Confirmed DES-?-ECB encrypt\n");
+    FILE_GLOBAL_WRITE_LEN("Confirmed DES-64-ECB encrypt\n");
   }
   else
   {
@@ -1706,7 +1741,7 @@ int test_dmac5_41_42()
 
   if(memcmp(dec, input, 0x20) == 0)
   {
-    FILE_GLOBAL_WRITE_LEN("Confirmed DES-?-ECB decrypt\n");
+    FILE_GLOBAL_WRITE_LEN("Confirmed DES-64-ECB decrypt\n");
   }
   else
   {
@@ -1754,7 +1789,7 @@ int test_dmac5_49_4A()
 
   if(memcmp(expected, output, 0x20) == 0)
   {
-    FILE_GLOBAL_WRITE_LEN("Confirmed DES-?-CBC encrypt\n");
+    FILE_GLOBAL_WRITE_LEN("Confirmed DES-64-CBC encrypt\n");
   }
   else
   {
@@ -1787,7 +1822,165 @@ int test_dmac5_49_4A()
 
   if(memcmp(dec, input, 0x20) == 0)
   {
-    FILE_GLOBAL_WRITE_LEN("Confirmed DES-?-CBC decrypt\n");
+    FILE_GLOBAL_WRITE_LEN("Confirmed DES-64-CBC decrypt\n");
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("Unexpected result\n");
+  }
+
+  return 0;
+}
+
+//============================================
+
+int test_sha1()
+{
+  char* input = "The gray fox jumped over the dog";
+  char output[0x40];
+  memset(output, 0, 0x40);
+
+  int size = strnlen(input, 0x40);
+
+  //allocating 40 byte iv just in case
+  char iv[0x28];
+  memset(iv, 0, 0x28);
+  iv[0] = 0; //set IV to 0 currently
+
+  int res = execute_dmac5_command_0x03_eb3af9b5(input, output, size, iv, 1, 0x000); //works
+  //int res = execute_dmac5_command_0x03_eb3af9b5(input, output, size, iv, 1, 0x400);
+  //int res = execute_dmac5_command_0x03_eb3af9b5(input, output, size, iv, 1, 0x800); //works
+  //int res = execute_dmac5_command_0x03_eb3af9b5(input, output, size, iv, 1, 0xC00);
+
+  //snprintf(sprintfBuffer, 256, "sha1 result : %x\n", res);
+  //FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+
+  print_bytes(output, 0x40);
+
+  char expected[0x14] = {0x0c, 0x99, 0x04, 0x6b, 0x6a, 0xa2, 0x44, 0x25, 0x11, 0x1e, 0x07, 0x21, 0xd2, 0x07, 0x85, 0x6a, 0xab, 0xd5, 0x64, 0x18};
+
+  if(memcmp(expected, output, 0x14) == 0)
+  {
+    FILE_GLOBAL_WRITE_LEN("Confirmed SHA-1\n");
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("Unexpected result\n");
+  }
+
+  return 0;
+}
+
+int test_hmac_sha1_0()
+{
+  char key[0x20] = {0}; //key length is always set to 0x100 bits
+
+  char* input = "The gray fox jumped over the dog";
+  char output[0x40];
+  memset(output, 0, 0x40);
+
+  int size = strnlen(input, 0x40);
+
+  //allocating 40 byte iv just in case
+  char iv[0x28];
+  memset(iv, 0, 0x28);
+  iv[0] = 0; //set IV to 0 currently
+
+  int res = execute_dmac5_command_0x23_6704d985(input, output, size, key, 0, 1, 0x000); //works without iv
+  //int res = execute_dmac5_command_0x23_6704d985(input, output, size, key, 0, 1, 0x400); //works without iv but does not produce result
+  //int res = execute_dmac5_command_0x23_6704d985(input, output, size, key, 0, 1, 0x800); //works without iv but produces unexpected digest
+  //int res = execute_dmac5_command_0x23_6704d985(input, output, size, key, 0, 1, 0xC00); //works without iv but does not produce result
+
+  //snprintf(sprintfBuffer, 256, "hmac-sha1 result : %x\n", res);
+  //FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+
+  print_bytes(output, 0x40);
+
+  char expected[0x14] = {0xe3, 0xaf, 0xf3, 0xe8, 0xef, 0x5c, 0xeb, 0xa1, 0x35, 0xa9, 0xe5, 0x53, 0xf7, 0x0e, 0x2d, 0xea, 0xbb, 0x0e, 0xe0, 0x78};
+
+  if(memcmp(expected, output, 0x14) == 0)
+  {
+    FILE_GLOBAL_WRITE_LEN("Confirmed HMAC-SHA-1\n");
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("Unexpected result\n");
+  }
+
+  return 0;
+}
+
+int test_hmac_sha1_1()
+{
+  char key[0x20] = {0}; //key length is always set to 0x100 bits
+  key[0x0] = 1;
+
+  char* input = "The gray fox jumped over the dog";
+  char output[0x40];
+  memset(output, 0, 0x40);
+
+  int size = strnlen(input, 0x40);
+
+  //allocating 40 byte iv just in case
+  char iv[0x28];
+  memset(iv, 0, 0x28);
+  iv[0] = 0; //set IV to 0 currently
+
+  int res = execute_dmac5_command_0x23_6704d985(input, output, size, key, iv, 1, 0x000); //works
+  //int res = execute_dmac5_command_0x23_6704d985(input, output, size, key, iv, 1, 0x400);
+  //int res = execute_dmac5_command_0x23_6704d985(input, output, size, key, iv, 1, 0x800); //works
+  //int res = execute_dmac5_command_0x23_6704d985(input, output, size, key, iv, 1, 0xC00);
+
+  //snprintf(sprintfBuffer, 256, "hmac-sha1 result : %x\n", res);
+  //FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+
+  //print_bytes(output, 0x40);
+
+  char expected[0x14] = {0x20, 0xc7, 0xef, 0x4e, 0x9b, 0x51, 0xbd, 0xbb, 0xa2, 0x21, 0x66, 0xf4, 0x46, 0xd7, 0x89, 0x31, 0x2a, 0x9e, 0x45, 0x14};
+
+  if(memcmp(expected, output, 0x14) == 0)
+  {
+    FILE_GLOBAL_WRITE_LEN("Confirmed HMAC-SHA-1\n");
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("Unexpected result\n");
+  }
+
+  return 0;
+}
+
+int test_hmac_sha1_1f()
+{
+  char key[0x20] = {0}; //key length is always set to 0x100 bits
+  key[0x1F] = 1;
+
+  char* input = "The gray fox jumped over the dog";
+  char output[0x40];
+  memset(output, 0, 0x40);
+
+  int size = strnlen(input, 0x40);
+
+  //allocating 40 byte iv just in case
+  char iv[0x28];
+  memset(iv, 0, 0x28);
+  iv[0] = 0; //set IV to 0 currently
+
+  int res = execute_dmac5_command_0x23_6704d985(input, output, size, key, iv, 1, 0x000); //works
+  //int res = execute_dmac5_command_0x23_6704d985(input, output, size, key, iv, 1, 0x400);
+  //int res = execute_dmac5_command_0x23_6704d985(input, output, size, key, iv, 1, 0x800); //works
+  //int res = execute_dmac5_command_0x23_6704d985(input, output, size, key, iv, 1, 0xC00);
+
+  //snprintf(sprintfBuffer, 256, "hmac-sha1 result : %x\n", res);
+  //FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+
+  //print_bytes(output, 0x40);
+
+  char expected[0x14] = {0xf3, 0x40, 0xe2, 0x55, 0x60, 0xbc, 0x01, 0x9d, 0x1a, 0x6f, 0x42, 0x36, 0xe2, 0x35, 0x77, 0x03, 0xc9, 0xde, 0xda, 0x42,};
+
+  if(memcmp(expected, output, 0x14) == 0)
+  {
+    FILE_GLOBAL_WRITE_LEN("Confirmed HMAC-SHA-1\n");
   }
   else
   {
@@ -1898,6 +2091,11 @@ int module_start(SceSize argc, const void *args)
 
   //test_dmac5_41_42();
   //test_dmac5_49_4A();
+
+  //test_sha1();
+  test_hmac_sha1_0();
+  //test_hmac_sha1_1();
+  //test_hmac_sha1_1f();
 
   return SCE_KERNEL_START_SUCCESS;
 }
