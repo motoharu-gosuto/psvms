@@ -21,6 +21,9 @@
 //hmac here
 //https://www.liavaag.org/English/SHA-Generator/HMAC/
 
+//AES-CTR library
+//https://www.example-code.com/csharp/crypt2_aes_ctr.asp
+
 int get_msif_code_base(uintptr_t* base)
 {
   *base = 0;
@@ -2578,15 +2581,14 @@ int test_dmac5_21_22_128_key()
     FILE_GLOBAL_WRITE_LEN("executed dmac5 cmd 21\n");
   }
 
-  print_bytes(output, 0x40);
+  //print_bytes(output, 0x40);
 
-  return 0;
-
-  char expected[0x20] = {0};
+  char expected[0x20] = { 0x0C, 0x8A, 0x99, 0xEE, 0x9D, 0x0C, 0x51, 0x18, 0x16, 0x19, 0x72, 0x2F, 0x84, 0x8D, 0x30, 0x37, 
+                          0x73, 0xED, 0xBE, 0xEE, 0x0F, 0xC0, 0xC6, 0xE0, 0xD3, 0x5C, 0xAA, 0xDC, 0x51, 0xD6, 0x91, 0x1F};                         
 
   if(memcmp(expected, output, 0x20) == 0)
   {
-    FILE_GLOBAL_WRITE_LEN("Confirmed AES-128-? encrypt\n");
+    FILE_GLOBAL_WRITE_LEN("Confirmed AES-128-CTR encrypt\n");
   }
   else
   {
@@ -2600,7 +2602,7 @@ int test_dmac5_21_22_128_key()
   memset(iv, 0, 0x10);
   iv[0] = 1;
 
-  res = execute_dmac5_command_0x22_7d46768c(output, dec, 0x20, key, 0x80, iv, 1);
+  res = execute_dmac5_command_0x21_82b5dcef(output, dec, 0x20, key, 0x80, iv, 1);
   if(res < 0)
   {
     snprintf(sprintfBuffer, 256, "failed to execute_dmac5_command_0x22_7d46768c : %x\n", res);
@@ -2613,7 +2615,7 @@ int test_dmac5_21_22_128_key()
 
   if(memcmp(dec, input, 0x20) == 0)
   {
-    FILE_GLOBAL_WRITE_LEN("Confirmed AES-128-? decrypt\n");
+    FILE_GLOBAL_WRITE_LEN("Confirmed AES-128-CTR decrypt\n");
   }
   else
   {
@@ -2627,132 +2629,189 @@ int test_dmac5_21_22_192_key()
 {
   char key[0x20] = {0};
   
-    char* input = "The gray fox jumped over the dog";
-    char output[0x40];
-    memset(output, 0, 0x40);
+  char* input = "The gray fox jumped over the dog";
+  char output[0x40];
+  memset(output, 0, 0x40);
+
+  int size = strnlen(input, 0x40);
+
+  char iv[0x10];
+  memset(iv, 0, 0x10);
+  iv[0] = 1;
+
+  int res = execute_dmac5_command_0x21_82b5dcef(input, output, size, key, 0xC0, iv, 1);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to execute_dmac5_command_0x21_82b5dcef : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("executed dmac5 cmd 21\n");
+  }
+
+  char expected[0x20] = {0x99, 0x5B, 0xD7, 0xAA, 0xA0, 0x01, 0x96, 0x32, 0x80, 0x68, 0xBE, 0x8B, 0x32, 0x3D, 0x51, 0x58, 
+                         0xE8, 0x82, 0x40, 0x5C, 0x68, 0x86, 0x9B, 0x33, 0x3C, 0x52, 0x16, 0x26, 0xA4, 0xD4, 0x99, 0x67};
   
-    int size = strnlen(input, 0x40);
-  
-    char iv[0x10];
-    memset(iv, 0, 0x10);
-    iv[0] = 1;
-  
-    int res = execute_dmac5_command_0x21_82b5dcef(input, output, size, key, 0xC0, iv, 1);
-    if(res < 0)
-    {
-      snprintf(sprintfBuffer, 256, "failed to execute_dmac5_command_0x21_82b5dcef : %x\n", res);
-      FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
-    }
-    else
-    {
-      FILE_GLOBAL_WRITE_LEN("executed dmac5 cmd 21\n");
-    }
-  
-    char expected[0x20] = {0};
-  
-    if(memcmp(expected, output, 0x20) == 0)
-    {
-      FILE_GLOBAL_WRITE_LEN("Confirmed AES-192-? encrypt\n");
-    }
-    else
-    {
-      FILE_GLOBAL_WRITE_LEN("Unexpected result\n");
-    }  
-  
-    char dec[0x40];
-    memset(dec, 0, 0x40);
-  
-    //have to set again - it will be changed
-    memset(iv, 0, 0x10);
-    iv[0] = 1;
-  
-    res = execute_dmac5_command_0x22_7d46768c(output, dec, 0x20, key, 0xC0, iv, 1);
-    if(res < 0)
-    {
-      snprintf(sprintfBuffer, 256, "failed to execute_dmac5_command_0x22_7d46768c : %x\n", res);
-      FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
-    }
-    else
-    {
-      FILE_GLOBAL_WRITE_LEN("executed dmac5 cmd 22\n");
-    }
-  
-    if(memcmp(dec, input, 0x20) == 0)
-    {
-      FILE_GLOBAL_WRITE_LEN("Confirmed AES-192-CBC decrypt\n");
-    }
-    else
-    {
-      FILE_GLOBAL_WRITE_LEN("Unexpected result\n");
-    }
-  
-    return 0;
+  if(memcmp(expected, output, 0x20) == 0)
+  {
+    FILE_GLOBAL_WRITE_LEN("Confirmed AES-192-CTR encrypt\n");
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("Unexpected result\n");
+  }  
+
+  char dec[0x40];
+  memset(dec, 0, 0x40);
+
+  //have to set again - it will be changed
+  memset(iv, 0, 0x10);
+  iv[0] = 1;
+
+  res = execute_dmac5_command_0x21_82b5dcef(output, dec, 0x20, key, 0xC0, iv, 1);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to execute_dmac5_command_0x22_7d46768c : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("executed dmac5 cmd 22\n");
+  }
+
+  if(memcmp(dec, input, 0x20) == 0)
+  {
+    FILE_GLOBAL_WRITE_LEN("Confirmed AES-192-CTR decrypt\n");
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("Unexpected result\n");
+  }
+
+  return 0;
 }
 
 int test_dmac5_21_22_256_key()
 {
   char key[0x20] = {0};
   
-    char* input = "The gray fox jumped over the dog";
-    char output[0x40];
-    memset(output, 0, 0x40);
+  char* input = "The gray fox jumped over the dog";
+  char output[0x40];
+  memset(output, 0, 0x40);
+
+  int size = strnlen(input, 0x40);
+
+  char iv[0x10];
+  memset(iv, 0, 0x10);
+  iv[0] = 1;
+
+  int res = execute_dmac5_command_0x21_82b5dcef(input, output, size, key, 0x100, iv, 1);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to execute_dmac5_command_0x21_82b5dcef : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("executed dmac5 cmd 21\n");
+  }
+
+  char expected[0x20] = { 0x07, 0x67, 0xEF, 0xDB, 0xA0, 0x37, 0x57, 0xC0, 0x89, 0x05, 0xDB, 0x89, 0xE4, 0xA1, 0x06, 0xE6, 
+                          0xBE, 0xC2, 0x24, 0x1D, 0x22, 0x16, 0x0E, 0x1C, 0x27, 0x3A, 0xAD, 0xB6, 0x9A, 0x97, 0xF2, 0x7F};
+
+  if(memcmp(expected, output, 0x20) == 0)
+  {
+    FILE_GLOBAL_WRITE_LEN("Confirmed AES-256-CTR encrypt\n");
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("Unexpected result\n");
+  }  
+
+  char dec[0x40];
+  memset(dec, 0, 0x40);
+
+  //have to set again - it will be changed
+  memset(iv, 0, 0x10);
+  iv[0] = 1;
+
+  res = execute_dmac5_command_0x21_82b5dcef(output, dec, 0x20, key, 0x100, iv, 1);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to execute_dmac5_command_0x22_7d46768c : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("executed dmac5 cmd 22\n");
+  }
+
+  if(memcmp(dec, input, 0x20) == 0)
+  {
+    FILE_GLOBAL_WRITE_LEN("Confirmed AES-256-CTR decrypt\n");
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("Unexpected result\n");
+  }
+
+  return 0;
+}
+
+//============================================
+
+int test_dmac5_21_22_128_specific()
+{
+  char key[0x20] = {0};
   
-    int size = strnlen(input, 0x40);
+  char input[0x100] = {0};
+
+  char output[0x100];
+  memset(output, 0, 0x100);
+
+  char iv[0x10];
+  memset(iv, 0, 0x10);
+
+  int res = execute_dmac5_command_0x21_82b5dcef(input, output, 0x100, key, 0x80, iv, 1);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to execute_dmac5_command_0x21_82b5dcef : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("executed dmac5 cmd 21\n");
+  }
+
+  char expected[0x100] = {
+    0x66, 0xE9, 0x4B, 0xD4, 0xEF, 0x8A, 0x2C, 0x3B, 0x88, 0x4C, 0xFA, 0x59, 0xCA, 0x34, 0x2B, 0x2E, 
+    0x58, 0xE2, 0xFC, 0xCE, 0xFA, 0x7E, 0x30, 0x61, 0x36, 0x7F, 0x1D, 0x57, 0xA4, 0xE7, 0x45, 0x5A, 
+    0x03, 0x88, 0xDA, 0xCE, 0x60, 0xB6, 0xA3, 0x92, 0xF3, 0x28, 0xC2, 0xB9, 0x71, 0xB2, 0xFE, 0x78, 
+    0xF7, 0x95, 0xAA, 0xAB, 0x49, 0x4B, 0x59, 0x23, 0xF7, 0xFD, 0x89, 0xFF, 0x94, 0x8B, 0xC1, 0xE0, 
+    0x20, 0x02, 0x11, 0x21, 0x4E, 0x73, 0x94, 0xDA, 0x20, 0x89, 0xB6, 0xAC, 0xD0, 0x93, 0xAB, 0xE0, 
+    0xC9, 0x4D, 0xA2, 0x19, 0x11, 0x8E, 0x29, 0x7D, 0x7B, 0x7E, 0xBC, 0xBC, 0xC9, 0xC3, 0x88, 0xF2, 
+    0x8A, 0xDE, 0x7D, 0x85, 0xA8, 0xEE, 0x35, 0x61, 0x6F, 0x71, 0x24, 0xA9, 0xD5, 0x27, 0x02, 0x91, 
+    0x95, 0xB8, 0x4D, 0x1B, 0x96, 0xC6, 0x90, 0xFF, 0x2F, 0x2D, 0xE3, 0x0B, 0xF2, 0xEC, 0x89, 0xE0, 
+    0x02, 0x53, 0x78, 0x6E, 0x12, 0x65, 0x04, 0xF0, 0xDA, 0xB9, 0x0C, 0x48, 0xA3, 0x03, 0x21, 0xDE, 
+    0x33, 0x45, 0xE6, 0xB0, 0x46, 0x1E, 0x7C, 0x9E, 0x6C, 0x6B, 0x7A, 0xFE, 0xDD, 0xE8, 0x3F, 0x40, 
+    0xDE, 0xB3, 0xFA, 0x67, 0x94, 0xF8, 0xFD, 0x8F, 0x55, 0xA8, 0x8D, 0xCB, 0xDA, 0x9D, 0x68, 0xF2, 
+    0x13, 0x7C, 0xC9, 0xC8, 0x34, 0x20, 0x07, 0x7E, 0x7C, 0xF2, 0x8A, 0xB2, 0x69, 0x6B, 0x0D, 0xF0, 
+    0x5D, 0x11, 0x45, 0x2B, 0x58, 0xAC, 0x50, 0xAA, 0x2E, 0xB3, 0xA1, 0x95, 0xB6, 0x1B, 0x87, 0xE5, 
+    0xC6, 0x5A, 0x6D, 0xD5, 0xD7, 0xF7, 0xA8, 0x40, 0x65, 0xD5, 0xA1, 0x7F, 0xF4, 0x62, 0x73, 0x08, 
+    0x60, 0x02, 0x49, 0x6D, 0xB6, 0x3F, 0xA4, 0xB9, 0x1B, 0xEE, 0x38, 0x7F, 0xA3, 0x03, 0x0C, 0x95, 
+    0xA7, 0x3F, 0x8D, 0x04, 0x37, 0xE0, 0x91, 0x5F, 0xBC, 0xE5, 0xD7, 0xA6, 0x2D, 0x8D, 0xAB, 0x0A};
   
-    char iv[0x10];
-    memset(iv, 0, 0x10);
-    iv[0] = 1;
-  
-    int res = execute_dmac5_command_0x21_82b5dcef(input, output, size, key, 0x100, iv, 1);
-    if(res < 0)
-    {
-      snprintf(sprintfBuffer, 256, "failed to execute_dmac5_command_0x21_82b5dcef : %x\n", res);
-      FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
-    }
-    else
-    {
-      FILE_GLOBAL_WRITE_LEN("executed dmac5 cmd 21\n");
-    }
-  
-    char expected[0x20] = {0};
-  
-    if(memcmp(expected, output, 0x20) == 0)
-    {
-      FILE_GLOBAL_WRITE_LEN("Confirmed AES-256-? encrypt\n");
-    }
-    else
-    {
-      FILE_GLOBAL_WRITE_LEN("Unexpected result\n");
-    }  
-  
-    char dec[0x40];
-    memset(dec, 0, 0x40);
-  
-    //have to set again - it will be changed
-    memset(iv, 0, 0x10);
-    iv[0] = 1;
-  
-    res = execute_dmac5_command_0x22_7d46768c(output, dec, 0x20, key, 0x100, iv, 1);
-    if(res < 0)
-    {
-      snprintf(sprintfBuffer, 256, "failed to execute_dmac5_command_0x22_7d46768c : %x\n", res);
-      FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
-    }
-    else
-    {
-      FILE_GLOBAL_WRITE_LEN("executed dmac5 cmd 22\n");
-    }
-  
-    if(memcmp(dec, input, 0x20) == 0)
-    {
-      FILE_GLOBAL_WRITE_LEN("Confirmed AES-256-? decrypt\n");
-    }
-    else
-    {
-      FILE_GLOBAL_WRITE_LEN("Unexpected result\n");
-    }
-  
-    return 0;
+  if(memcmp(expected, output, 0x10) == 0)
+  {
+    FILE_GLOBAL_WRITE_LEN("Confirmed AES-128-CTR\n");
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("Unexpected result\n");
+  } 
+
+  return 0;
 }
 
 //============================================
@@ -2879,9 +2938,11 @@ int module_start(SceSize argc, const void *args)
 
   //test_hmac_sha1_key_id();
 
-  test_dmac5_21_22_128_key();
+  //test_dmac5_21_22_128_key();
   //test_dmac5_21_22_192_key();
   //test_dmac5_21_22_256_key();
+
+  //test_dmac5_21_22_128_specific();
 
   return SCE_KERNEL_START_SUCCESS;
 }
