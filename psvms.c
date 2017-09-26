@@ -1,6 +1,8 @@
 #include <psp2kern/kernel/modulemgr.h>
 #include <psp2kern/kernel/sysmem.h>
 #include <psp2kern/kernel/cpu.h>
+#include <psp2kern/io/dirent.h>
+#include <psp2kern/io/fcntl.h>
 
 #include <taihen.h>
 #include <module.h>
@@ -178,6 +180,8 @@ int get_card_string()
 
 #define SceSblSsMgrForDriver_NID 0x61E9428D
 #define SceSblAuthMgrForKernel_NID 0x7ABF5135
+#define SceAppMgrForDriver_NID 0xDCE180F8
+#define SceNpDrmForDriver_NID 0xD84DC44A
 
 typedef int (execute_dmac5_command_0x01_01be0374_t)(char *src, char *dst, int size, int key_slot, int key_size, int arg_4);
 typedef int (execute_dmac5_command_0x02_8b4700cb_t)(char *src, char *dst, int size, int key_slot, int key_size, int arg_4);
@@ -213,6 +217,12 @@ typedef int (execute_dmac5_command_0x23_92e37656_t)(char *src, char *dst, int si
 typedef int (execute_dmac5_command_0x21_82b5dcef_t)(char *src, char *dst, int size, char *key, int key_size, char *iv, int mask_enable);
 typedef int (execute_dmac5_command_0x22_7d46768c_t)(char *src, char *dst, int size, char *key, int key_size, char *iv, int mask_enable);
 
+#define MAX_MOUNT_ORIG_PATH_LENGTH 0x124
+#define MAX_MOUNT_POINT_LENGTH 0x10
+
+typedef int(sceAppMgrGameDataMountForDriver_t)(char* original_path, char* unk1, char* unk2, char* mount_point);
+typedef int(sceAppMgrUmountForDriver_t)(const char *mount_point);
+
 execute_dmac5_command_0x01_01be0374_t* execute_dmac5_command_0x01_01be0374 = 0;
 execute_dmac5_command_0x02_8b4700cb_t* execute_dmac5_command_0x02_8b4700cb = 0;
 
@@ -246,6 +256,9 @@ execute_dmac5_command_0x23_92e37656_t* execute_dmac5_command_0x23_92e37656 = 0;
 
 execute_dmac5_command_0x21_82b5dcef_t* execute_dmac5_command_0x21_82b5dcef = 0;
 execute_dmac5_command_0x22_7d46768c_t* execute_dmac5_command_0x22_7d46768c = 0;
+
+sceAppMgrGameDataMountForDriver_t* sceAppMgrGameDataMountForDriver = 0;
+sceAppMgrUmountForDriver_t* sceAppMgrUmountForDriver = 0;
 
 int initialize_functions()
 {
@@ -478,6 +491,26 @@ int initialize_functions()
   }
   
   FILE_GLOBAL_WRITE_LEN("set execute_dmac5_command_0x22_7d46768c\n");
+
+  res = module_get_export_func(KERNEL_PID, "SceAppMgr", SceAppMgrForDriver_NID, 0xCE356B2D, (uintptr_t*)&sceAppMgrGameDataMountForDriver);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to set sceAppMgrGameDataMountForDriver : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+    return -1;
+  }
+  
+  FILE_GLOBAL_WRITE_LEN("set sceAppMgrGameDataMountForDriver\n");
+
+  res = module_get_export_func(KERNEL_PID, "SceAppMgr", SceAppMgrForDriver_NID, 0xA714BB35, (uintptr_t*)&sceAppMgrUmountForDriver);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to set sceAppMgrUmountForDriver : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+    return -1;
+  }
+  
+  FILE_GLOBAL_WRITE_LEN("set sceAppMgrUmountForDriver\n");
 
   return 0;
 }
@@ -2921,7 +2954,172 @@ int test_dmac5_22_128_specific()
 
 //============================================
 
-tai_hook_ref_t sceSblAuthMgrSetDmac5Key_hook_ref = 0;
+int list_pfs_mount_point(char* mount_point)
+{
+  snprintf(sprintfBuffer, 256, "mount point: %s\n", mount_point);
+  FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+
+  SceUID dirId = ksceIoDopen(mount_point);
+  if(dirId >= 0)
+  {
+    int res = 0;
+    do
+    {
+      SceIoDirent dir;
+      memset(&dir, 0, sizeof(SceIoDirent));
+
+      res = ksceIoDread(dirId, &dir);
+      if(res > 0)
+      {
+        snprintf(sprintfBuffer, 256, "%s\n", dir.d_name);
+        FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+      }
+    }
+    while(res > 0);
+
+    ksceIoDclose(dirId);
+  }
+  else
+  {
+    snprintf(sprintfBuffer, 256, "failed to open dir: %x\n", dirId);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  }
+
+  return 0;
+}
+
+#define COPY_BLOCK_SIZE 0x1000
+char g_copy_buffer[COPY_BLOCK_SIZE] = {0};
+
+int copy_file_internal(SceUID in, SceUID out, int max_size)
+{
+  SceOff size = ksceIoLseek(in, 0, SCE_SEEK_END);
+  if(size <= 0) //pos should be > 0
+  {
+    FILE_GLOBAL_WRITE_LEN("Failed to seek end file\n");
+    return -1;
+  }
+
+  SceOff res = ksceIoLseek(in, 0, SCE_SEEK_SET);
+  if(res < 0) //pos will be 0
+  {
+    FILE_GLOBAL_WRITE_LEN("Failed to seek begin file\n");
+    return -1; 
+  }
+
+  SceOff nBlocks = size / COPY_BLOCK_SIZE;
+  SceOff tailSize = size % COPY_BLOCK_SIZE;
+
+  SceOff copied_size = 0;
+
+  for(int i = 0; i < nBlocks; i++)
+  {
+    res = ksceIoRead(in, g_copy_buffer, COPY_BLOCK_SIZE);
+    if(res < 0)
+    {
+      FILE_GLOBAL_WRITE_LEN("Failed to read block\n");
+      return -1;
+    }
+
+    res = ksceIoWrite(out, g_copy_buffer, COPY_BLOCK_SIZE);
+    if(res < 0)
+    {
+      FILE_GLOBAL_WRITE_LEN("Failed to write block\n");
+      return -1;
+    }
+
+    copied_size += COPY_BLOCK_SIZE;
+
+    if(max_size > 0 && max_size < copied_size)
+      return 0;
+  }
+  
+  res = ksceIoRead(in, g_copy_buffer, tailSize);
+  if(res < 0)
+  {
+    FILE_GLOBAL_WRITE_LEN("Failed to read tail\n");
+    return -1;
+  }
+  
+  res = ksceIoWrite(out, g_copy_buffer, tailSize);
+  if(res < 0)
+  {
+    FILE_GLOBAL_WRITE_LEN("Failed to write tail\n");
+    return -1;
+  }
+
+  copied_size += tailSize;
+
+  return 0;
+}
+
+int copy_file(const char* original_path, const char* dest_path, int max_size)
+{
+  int res = 0;
+
+  SceUID in = ksceIoOpen(original_path, SCE_O_RDONLY, 0777);
+  if(in >= 0)
+  {
+    SceUID out = ksceIoOpen(dest_path, SCE_O_CREAT | SCE_O_WRONLY, 0777);   
+    if(out >= 0)
+    {
+      res = copy_file_internal(in, out, max_size);
+
+      ksceIoClose(out);
+    }
+    else
+    {
+      FILE_GLOBAL_WRITE_LEN("Failed to open out file\n");
+    }
+    ksceIoClose(in); 
+  }
+  else
+  {
+    FILE_GLOBAL_WRITE_LEN("Failed to open in file\n");
+  }
+
+  return res;
+}
+
+char original_path[MAX_MOUNT_ORIG_PATH_LENGTH] = {0};
+char mount_point[MAX_MOUNT_POINT_LENGTH] = {0};
+
+int test_pfs()
+{
+  char* path = "ux0:app/PCSC00082";  
+  memcpy(original_path, path, strnlen(path, MAX_MOUNT_ORIG_PATH_LENGTH));
+
+  int res = sceAppMgrGameDataMountForDriver(original_path, 0, 0, mount_point);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to sceAppMgrGameDataMountForDriver : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+    return -1;
+  }
+
+  list_pfs_mount_point("ux0:app/PCSC00082/sce_sys");
+
+  //int cpy_res = copy_file("ux0:app/PCSC00082/sce_sys/icon0.png", "ux0:dump/icon0.png", 0);
+  int cpy_res = copy_file("ux0:app/PCSC00082/eboot.bin", "ux0:dump/eboot.bin", COPY_BLOCK_SIZE * 0x10);
+  if(cpy_res < 0)
+  {
+    FILE_GLOBAL_WRITE_LEN("Failed to copy file\n");
+  }
+
+  res = sceAppMgrUmountForDriver(mount_point);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to sceAppMgrUmountForDriver : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+    return -1;
+  }
+
+  return 0;
+}
+
+//============================================
+
+tai_hook_ref_t sceSblAuthMgrSetDmac5Key_hook_ref;
 SceUID sceSblAuthMgrSetDmac5Key_hook_id = 0;
 
 int sceSblAuthMgrSetDmac5Key_hook(char *key, int key_size, int slot_id, int key_id)
@@ -2947,6 +3145,65 @@ int sceSblAuthMgrSetDmac5Key_hook(char *key, int key_size, int slot_id, int key_
   }
 }
 
+tai_hook_ref_t sceAppMgrGameDataMountForDriver_hook_ref;
+SceUID sceAppMgrGameDataMountForDriver_hook_id = 0;
+
+//original_path length = 0x124
+//unk1 = 0
+//unk2 = 0
+//mount_point length = 0x10
+int sceAppMgrGameDataMountForDriver_hook(char* original_path, char* unk1, char* unk2, char* mount_point)
+{
+  int res = TAI_CONTINUE(int, sceAppMgrGameDataMountForDriver_hook_ref, original_path, unk1, unk2, mount_point);
+
+  snprintf(sprintfBuffer, 256, "mount : %s %x %x %s %x\n", original_path, unk1, unk2, mount_point, res);
+  FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+
+  return res;
+}
+
+tai_hook_ref_t sceSblAuthMgrParseSelfHeader_hook_ref;
+SceUID sceSblAuthMgrParseSelfHeader_hook_id = 0;
+
+int sceSblAuthMgrParseSelfHeader_hook(int ctx, void *addr, int length, char *buffer)
+{
+  snprintf(sprintfBuffer, 256, "before sceSblAuthMgrParseSelfHeader_hook %x %x %x %x\n", ctx, addr, length, buffer);
+  FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+
+  /*
+  if(buffer > 0)
+  {
+    print_bytes(buffer, 0x90);
+  }
+  */
+
+  int res = TAI_CONTINUE(int, sceSblAuthMgrParseSelfHeader_hook_ref, ctx, addr, length, buffer);
+
+  snprintf(sprintfBuffer, 256, "after sceSblAuthMgrParseSelfHeader_hook %x %x %x %x %x\n", ctx, addr, length, buffer, res);
+  FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+
+  /*
+  if(buffer > 0)
+  {
+    print_bytes(buffer, 0x90);
+  }
+  */
+
+  return res;
+}
+
+tai_hook_ref_t sceNpDrmGetRifVitaKeyForDriver_hook_ref;
+SceUID sceNpDrmGetRifVitaKeyForDriver_hook_id = 0;
+
+int sceNpDrmGetRifVitaKeyForDriver_hook(char *license_buf, char*klicensee, uint32_t *flags, uint32_t *sku_flag, uint64_t *start_time, uint64_t *expiration_time, uint32_t *flags2)
+{
+  int res = TAI_CONTINUE(int, sceNpDrmGetRifVitaKeyForDriver_hook_ref, license_buf, klicensee, flags, sku_flag, start_time, expiration_time, flags2);
+
+  print_bytes(klicensee, 0x10);
+
+  return 0;
+}
+
 int initialize_hooks()
 {
   tai_module_info_t sbl_auth_mgr_info;
@@ -2959,6 +3216,36 @@ int initialize_hooks()
       FILE_GLOBAL_WRITE_LEN("Failed to init sceSblAuthMgrSetDmac5Key_hook\n");
     else
       FILE_GLOBAL_WRITE_LEN("Init sceSblAuthMgrSetDmac5Key_hook\n");
+
+    sceSblAuthMgrParseSelfHeader_hook_id = taiHookFunctionExportForKernel(KERNEL_PID, &sceSblAuthMgrParseSelfHeader_hook_ref, "SceSblAuthMgr", SceSblAuthMgrForKernel_NID, 0xf3411881, sceSblAuthMgrParseSelfHeader_hook);
+
+    if(sceSblAuthMgrParseSelfHeader_hook_id < 0)
+      FILE_GLOBAL_WRITE_LEN("Failed to init sceSblAuthMgrParseSelfHeader_hook\n");
+    else
+      FILE_GLOBAL_WRITE_LEN("Init sceSblAuthMgrParseSelfHeader_hook\n");
+  }
+
+  tai_module_info_t app_mgr_info;
+  app_mgr_info.size = sizeof(tai_module_info_t);
+  if(taiGetModuleInfoForKernel(KERNEL_PID, "SceAppMgr", &app_mgr_info) >= 0)
+  {
+    sceAppMgrGameDataMountForDriver_hook_id = taiHookFunctionExportForKernel(KERNEL_PID, &sceAppMgrGameDataMountForDriver_hook_ref, "SceAppMgr", SceAppMgrForDriver_NID, 0xCE356B2D, sceAppMgrGameDataMountForDriver_hook);
+
+    if(sceAppMgrGameDataMountForDriver_hook_id < 0)
+      FILE_GLOBAL_WRITE_LEN("Failed to init sceAppMgrGameDataMountForDriver_hook\n");
+    else
+      FILE_GLOBAL_WRITE_LEN("Init sceAppMgrGameDataMountForDriver_hook\n");
+  }
+
+  tai_module_info_t npdrm_info;
+  npdrm_info.size = sizeof(tai_module_info_t);
+  if(taiGetModuleInfoForKernel(KERNEL_PID, "SceNpDrm", &app_mgr_info) >= 0)
+  {
+    sceNpDrmGetRifVitaKeyForDriver_hook_id = taiHookFunctionExportForKernel(KERNEL_PID, &sceNpDrmGetRifVitaKeyForDriver_hook_ref, "SceNpDrm", SceNpDrmForDriver_NID, 0x723322B5, sceNpDrmGetRifVitaKeyForDriver_hook);
+    if(sceNpDrmGetRifVitaKeyForDriver_hook_id < 0)
+      FILE_GLOBAL_WRITE_LEN("Failed to init sceNpDrmGetRifVitaKeyForDriver_hook\n");
+    else
+      FILE_GLOBAL_WRITE_LEN("Init sceNpDrmGetRifVitaKeyForDriver_hook\n");
   }
 
   return 0;
@@ -2966,7 +3253,7 @@ int initialize_hooks()
 
 int deinitialize_hooks()
 {
-  if(sceSblAuthMgrSetDmac5Key_hook_id > 0)
+  if(sceSblAuthMgrSetDmac5Key_hook_id >= 0)
   {
     int res = taiHookReleaseForKernel(sceSblAuthMgrSetDmac5Key_hook_id, sceSblAuthMgrSetDmac5Key_hook_ref);
     
@@ -2980,6 +3267,54 @@ int deinitialize_hooks()
     }
     
     sceSblAuthMgrSetDmac5Key_hook_id = -1;
+  }
+
+  if(sceAppMgrGameDataMountForDriver_hook_id >= 0)
+  {
+    int res = taiHookReleaseForKernel(sceAppMgrGameDataMountForDriver_hook_id, sceAppMgrGameDataMountForDriver_hook_ref);
+
+    if(res < 0)
+    {
+      FILE_GLOBAL_WRITE_LEN("Failed to deinit sceAppMgrGameDataMountForDriver_hook\n");
+    }
+    else
+    {
+      FILE_GLOBAL_WRITE_LEN("Deinit sceAppMgrGameDataMountForDriver_hook\n");
+    }
+    
+    sceAppMgrGameDataMountForDriver_hook_id = -1;
+  }
+
+  if(sceSblAuthMgrParseSelfHeader_hook_id >= 0)
+  {
+    int res = taiHookReleaseForKernel(sceSblAuthMgrParseSelfHeader_hook_id, sceSblAuthMgrParseSelfHeader_hook_ref);
+    
+    if(res < 0)
+    {
+      FILE_GLOBAL_WRITE_LEN("Failed to deinit sceSblAuthMgrParseSelfHeader_hook\n");
+    }
+    else
+    {
+      FILE_GLOBAL_WRITE_LEN("Deinit sceSblAuthMgrParseSelfHeader_hook\n");
+    }
+    
+    sceSblAuthMgrParseSelfHeader_hook_id = -1;
+  }
+
+  if(sceNpDrmGetRifVitaKeyForDriver_hook_id >= 0)
+  {
+    int res = taiHookReleaseForKernel(sceNpDrmGetRifVitaKeyForDriver_hook_id, sceNpDrmGetRifVitaKeyForDriver_hook_ref);
+    
+    if(res < 0)
+    {
+      FILE_GLOBAL_WRITE_LEN("Failed to deinit sceNpDrmGetRifVitaKeyForDriver_hook\n");
+    }
+    else
+    {
+      FILE_GLOBAL_WRITE_LEN("Deinit sceNpDrmGetRifVitaKeyForDriver_hook\n");
+    }
+    
+    sceNpDrmGetRifVitaKeyForDriver_hook_id = -1;
   }
 
   return 0;
@@ -3043,12 +3378,14 @@ int module_start(SceSize argc, const void *args)
 
   //test_hmac_sha1_key_id();
 
-  test_dmac5_21_22_128_key();
-  test_dmac5_21_22_192_key();
-  test_dmac5_21_22_256_key();
+  //test_dmac5_21_22_128_key();
+  //test_dmac5_21_22_192_key();
+  //test_dmac5_21_22_256_key();
 
   //test_dmac5_21_128_specific();
   //test_dmac5_22_128_specific();
+
+  //test_pfs();
 
   return SCE_KERNEL_START_SUCCESS;
 }
