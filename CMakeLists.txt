@@ -28,6 +28,7 @@ add_definitions(-DNO_PTHREADS)
 add_executable(psvms
   psvms.c
   global_log.c
+  known_data.c
 )
 
 target_link_libraries(psvms

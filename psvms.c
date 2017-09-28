@@ -10,6 +10,7 @@
 
 #include "global_log.h"
 #include "msif_types.h"
+#include "known_data.h"
 
 //good online generator for AES CBC/ECB, DES CBC/ECB
 //http://aes.online-domain-tools.com/
@@ -182,6 +183,7 @@ int get_card_string()
 #define SceSblAuthMgrForKernel_NID 0x7ABF5135
 #define SceAppMgrForDriver_NID 0xDCE180F8
 #define SceNpDrmForDriver_NID 0xD84DC44A
+#define SceProcessmgrForKernel_NID 0x7A69DE86
 
 typedef int (execute_dmac5_command_0x01_01be0374_t)(char *src, char *dst, int size, int key_slot, int key_size, int arg_4);
 typedef int (execute_dmac5_command_0x02_8b4700cb_t)(char *src, char *dst, int size, int key_slot, int key_size, int arg_4);
@@ -3146,7 +3148,7 @@ int sceSblAuthMgrSetDmac5Key_hook(char *key, int key_size, int slot_id, int key_
 }
 
 tai_hook_ref_t sceAppMgrGameDataMountForDriver_hook_ref;
-SceUID sceAppMgrGameDataMountForDriver_hook_id = 0;
+SceUID sceAppMgrGameDataMountForDriver_hook_id = -1;
 
 //original_path length = 0x124
 //unk1 = 0
@@ -3162,30 +3164,240 @@ int sceAppMgrGameDataMountForDriver_hook(char* original_path, char* unk1, char* 
   return res;
 }
 
-tai_hook_ref_t sceSblAuthMgrParseSelfHeader_hook_ref;
-SceUID sceSblAuthMgrParseSelfHeader_hook_id = 0;
+#pragma pack(push, 1)
 
-int sceSblAuthMgrParseSelfHeader_hook(int ctx, void *addr, int length, char *buffer)
+//these types are defined in elfutils
+
+typedef uint16_t Elf32_Half;
+typedef uint32_t Elf32_Word;
+typedef uint32_t Elf32_Addr;
+typedef uint32_t Elf32_Off;
+
+#define EI_NIDENT (16)
+
+typedef struct
 {
-  snprintf(sprintfBuffer, 256, "before sceSblAuthMgrParseSelfHeader_hook %x %x %x %x\n", ctx, addr, length, buffer);
+  unsigned char	e_ident[EI_NIDENT];	/* Magic number and other info */
+  Elf32_Half	e_type;			/* Object file type */
+  Elf32_Half	e_machine;		/* Architecture */
+  Elf32_Word	e_version;		/* Object file version */
+  Elf32_Addr	e_entry;		/* Entry point virtual address */
+  Elf32_Off	e_phoff;		/* Program header table file offset */
+  Elf32_Off	e_shoff;		/* Section header table file offset */
+  Elf32_Word	e_flags;		/* Processor-specific flags */
+  Elf32_Half	e_ehsize;		/* ELF header size in bytes */
+  Elf32_Half	e_phentsize;		/* Program header table entry size */
+  Elf32_Half	e_phnum;		/* Program header table entry count */
+  Elf32_Half	e_shentsize;		/* Section header table entry size */
+  Elf32_Half	e_shnum;		/* Section header table entry count */
+  Elf32_Half	e_shstrndx;		/* Section header string table index */
+} Elf32_Ehdr;
+
+typedef struct
+{
+  Elf32_Word	p_type;			/* Segment type */
+  Elf32_Off	p_offset;		/* Segment file offset */
+  Elf32_Addr	p_vaddr;		/* Segment virtual address */
+  Elf32_Addr	p_paddr;		/* Segment physical address */
+  Elf32_Word	p_filesz;		/* Segment size in file */
+  Elf32_Word	p_memsz;		/* Segment size in memory */
+  Elf32_Word	p_flags;		/* Segment flags */
+  Elf32_Word	p_align;		/* Segment alignment */
+} Elf32_Phdr;
+
+typedef struct SCE_header
+{
+	uint32_t magic;                 /* 53434500 = SCE\0 */
+	uint32_t version;               /* header version 3*/
+	uint16_t sdk_type;              /* */
+	uint16_t header_type;           /* 1 self, 2 unknown, 3 pkg */
+	uint32_t metadata_offset;       /* metadata offset */
+	uint64_t header_len;            /* self header length */
+	uint64_t elf_filesize;          /* ELF file length */
+	uint64_t self_filesize;         /* SELF file length */
+	uint64_t unknown;               /* UNKNOWN */
+	uint64_t self_offset;           /* SELF offset */
+	uint64_t appinfo_offset;        /* app info offset */
+	uint64_t elf_offset;            /* ELF #1 offset */
+	uint64_t phdr_offset;           /* program header offset */
+	uint64_t shdr_offset;           /* section header offset */
+	uint64_t section_info_offset;   /* section info offset */
+	uint64_t sceversion_offset;     /* version offset */
+	uint64_t controlinfo_offset;    /* control info offset */
+	uint64_t controlinfo_size;      /* control info size */
+	uint64_t padding;
+} SCE_header;
+
+typedef struct SCE_appinfo
+{
+   uint64_t authid;                /* auth id */
+   uint32_t vendor_id;             /* vendor id */
+   uint32_t self_type;             /* app type */
+   uint64_t version;               /* app version */
+   uint64_t padding;               /* UNKNOWN */
+} SCE_appinfo;
+
+typedef struct segment_info
+{
+   uint64_t offset;
+   uint64_t length;
+   uint64_t compression; // 1 = uncompressed, 2 = compressed
+   uint64_t encryption; // 1 = encrypted, 2 = plain
+} segment_info;
+
+typedef struct process_auth_id_ctx //size is 0x90
+{
+   uint32_t unk_8;
+   uint32_t unk_C;
+   
+   uint32_t unk_10[20];
+   
+   uint32_t unk_60;
+   uint32_t unk_64;
+   char klicensee[0x10]; // offset 0x68
+   
+   uint32_t unk_78;
+   uint32_t unk_7C;
+   
+   uint32_t unk_80;
+   uint32_t unk_84;
+   uint32_t unk_88;
+   uint32_t unk_8C;
+   
+   uint32_t unk_90;
+   uint32_t unk_94;
+}process_auth_id_ctx;
+
+typedef struct header_ctx_response //size is 0x90
+{  
+   char data[0x90]; // offset 0x98
+}header_ctx_response;
+
+typedef struct header_ctx // size is 0x130. probably SceSblSmCommContext130
+{
+   uint32_t unk_0;
+   uint32_t self_type; //used - user = 1 / kernel = 0
+   
+   process_auth_id_ctx auth_ctx; //size is 0x90 - can be obtained with ksceKernelGetProcessAuthid
+   
+   header_ctx_response resp; //size is 0x90
+   
+   uint32_t unk_128; // used - SceSblACMgrForKernel_d442962e related
+   uint32_t unk_12C;
+   
+}header_ctx;
+
+typedef struct self_data_buffer
+{
+   SCE_header sce_header;
+   SCE_appinfo sce_appinfo;
+   Elf32_Ehdr elf_hdr;
+   
+   //... data goes
+   
+}self_data_buffer;
+
+typedef struct self_data_ctx //size is 0x30
+{
+   self_data_buffer* self_header; //aligned buffer - based on (buffer_unaligned). 
+                                  //points at SCE_header followed by SCE_appinfo
+                                  //size is 0x1000
+   int length;
+   Elf32_Ehdr* elf_ptr; //pointer constructed with elf_offset
+   Elf32_Phdr* phdr_ptr; //pointer constructed with phdr_offset
+
+   uint8_t unk_10; // = 2
+   uint8_t unk_11;
+   uint8_t unk_12;
+   uint8_t unk_13;
+   
+   segment_info* section_info_ptr; //pointer constructed with section_info_offset
+   void* buffer_unaligned; //self header data - size 0x103F - raw data read from file
+   int ctx; //F00D ctx (1/0) - obtained with sceSblAuthMgrStartF00DCommunication
+
+   header_ctx* buffer;
+   SceUID fd; // file descriptor of self file - obtained with sceIoOpenForDriver
+   SceUID pid;
+   uint32_t unk_2C;
+}self_data_ctx;
+
+typedef int(segment_decrypt_callback_t)(void* unk);
+
+typedef struct self_decrypter_ctx //size is unknown
+{
+   uint32_t unk_0;
+   uint32_t unk_4;
+   uint32_t unk_8;
+   uint32_t unk_C;
+   
+   uint32_t unk_10;
+   uint32_t unk_14;
+   uint32_t unk_18;
+   uint32_t unk_1C;
+   
+   self_data_ctx* data_ctx;
+   SceUID evid; //SceModuleMgrSelfDecryptComm event flag
+   SceUID tid; //SceModuleMgrSelfDecrypter thread
+   uint32_t unk_2C;
+   
+   uint32_t unk_30;
+   uint32_t unk_34;
+   uint16_t segment_number;
+   uint16_t unk_3A;
+   uint32_t unk_3C; // = 0x10
+   
+   uint32_t unk_40;
+   uint32_t unk_44;
+   segment_decrypt_callback_t* dec_callback;
+   
+   //... data goes on
+   
+}self_decrypter_ctx;
+
+#pragma pack(pop)
+
+tai_hook_ref_t sceSblAuthMgrParseSelfHeader_hook_ref;
+SceUID sceSblAuthMgrParseSelfHeader_hook_id = -1;
+
+int g_ctr = 0;
+
+int sceSblAuthMgrParseSelfHeader_hook(int ctx, char *self_header, int length, header_ctx *buffer)
+{
+  //snprintf(sprintfBuffer, 256, "before sceSblAuthMgrParseSelfHeader_hook %x %x %x %x\n", ctx, addr, length, buffer);
+  //FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+
+  int res = TAI_CONTINUE(int, sceSblAuthMgrParseSelfHeader_hook_ref, ctx, self_header, length, buffer);
+
+  snprintf(sprintfBuffer, 256, "after sceSblAuthMgrParseSelfHeader_hook %x %x %x %x %x\n", ctx, self_header, length, buffer, res);
   FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
 
-  /*
   if(buffer > 0)
   {
-    print_bytes(buffer, 0x90);
+    if(g_ctr < 1)
+    {
+      if(memcmp(known_self_header, self_header, 0x20) == 0)
+      {
+        FILE_GLOBAL_WRITE_LEN("FOUND SELF!!!!!!!!\n");
+        print_bytes(buffer->auth_ctx.klicensee, 0x10);
+      }
+    }
   }
-  */
-
-  int res = TAI_CONTINUE(int, sceSblAuthMgrParseSelfHeader_hook_ref, ctx, addr, length, buffer);
-
-  snprintf(sprintfBuffer, 256, "after sceSblAuthMgrParseSelfHeader_hook %x %x %x %x %x\n", ctx, addr, length, buffer, res);
-  FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
 
   /*
   if(buffer > 0)
   {
-    print_bytes(buffer, 0x90);
+    if(g_ctr < 1)
+    {
+      if(memcmp(known_klicensee, buffer->auth_ctx.klicensee, 0x10) == 0)
+      {
+        FILE_GLOBAL_WRITE_LEN("addr:\n");
+        print_bytes(self_header, 0xA0); //size is in length arg
+
+        FILE_GLOBAL_WRITE_LEN("buffer:\n");
+        print_bytes(buffer->resp.data, 0x90);
+        //g_ctr++;
+      }
+    }
   }
   */
 
@@ -3193,15 +3405,33 @@ int sceSblAuthMgrParseSelfHeader_hook(int ctx, void *addr, int length, char *buf
 }
 
 tai_hook_ref_t sceNpDrmGetRifVitaKeyForDriver_hook_ref;
-SceUID sceNpDrmGetRifVitaKeyForDriver_hook_id = 0;
+SceUID sceNpDrmGetRifVitaKeyForDriver_hook_id = -1;
 
 int sceNpDrmGetRifVitaKeyForDriver_hook(char *license_buf, char*klicensee, uint32_t *flags, uint32_t *sku_flag, uint64_t *start_time, uint64_t *expiration_time, uint32_t *flags2)
 {
   int res = TAI_CONTINUE(int, sceNpDrmGetRifVitaKeyForDriver_hook_ref, license_buf, klicensee, flags, sku_flag, start_time, expiration_time, flags2);
 
+  FILE_GLOBAL_WRITE_LEN("sceNpDrmGetRifVitaKeyForDriver_hook klicensee\n");
   print_bytes(klicensee, 0x10);
 
-  return 0;
+  return res;
+}
+
+tai_hook_ref_t sceKernelGetProcessAuthidForKernel_hook_ref;
+SceUID sceKernelGetProcessAuthidForKernel_hook_id = -1;
+
+int sceKernelGetProcessAuthidForKernel_hook(SceUID pid, process_auth_id_ctx* data)
+{
+  int res = TAI_CONTINUE(int, sceKernelGetProcessAuthidForKernel_hook_ref, pid, data);
+
+  FILE_GLOBAL_WRITE_LEN("sceKernelGetProcessAuthidForKernel klicensee\n");
+  print_bytes(data->klicensee, 0x10);
+  if(memcmp(known_klicensee, data->klicensee, 0x10) == 0)
+  {
+    FILE_GLOBAL_WRITE_LEN("klicensee: CONFIRMED\n");
+  }
+
+  return res;
 }
 
 int initialize_hooks()
@@ -3210,7 +3440,7 @@ int initialize_hooks()
   sbl_auth_mgr_info.size = sizeof(tai_module_info_t);
   if(taiGetModuleInfoForKernel(KERNEL_PID, "SceSblAuthMgr", &sbl_auth_mgr_info) >= 0)
   {
-    sceSblAuthMgrSetDmac5Key_hook_id = taiHookFunctionExportForKernel(KERNEL_PID, &sceSblAuthMgrSetDmac5Key_hook_ref, "SceSblAuthMgr", SceSblAuthMgrForKernel_NID, 0x122acdea, sceSblAuthMgrSetDmac5Key_hook);
+    //sceSblAuthMgrSetDmac5Key_hook_id = taiHookFunctionExportForKernel(KERNEL_PID, &sceSblAuthMgrSetDmac5Key_hook_ref, "SceSblAuthMgr", SceSblAuthMgrForKernel_NID, 0x122acdea, sceSblAuthMgrSetDmac5Key_hook);
 
     if(sceSblAuthMgrSetDmac5Key_hook_id < 0)
       FILE_GLOBAL_WRITE_LEN("Failed to init sceSblAuthMgrSetDmac5Key_hook\n");
@@ -3229,7 +3459,7 @@ int initialize_hooks()
   app_mgr_info.size = sizeof(tai_module_info_t);
   if(taiGetModuleInfoForKernel(KERNEL_PID, "SceAppMgr", &app_mgr_info) >= 0)
   {
-    sceAppMgrGameDataMountForDriver_hook_id = taiHookFunctionExportForKernel(KERNEL_PID, &sceAppMgrGameDataMountForDriver_hook_ref, "SceAppMgr", SceAppMgrForDriver_NID, 0xCE356B2D, sceAppMgrGameDataMountForDriver_hook);
+    //sceAppMgrGameDataMountForDriver_hook_id = taiHookFunctionExportForKernel(KERNEL_PID, &sceAppMgrGameDataMountForDriver_hook_ref, "SceAppMgr", SceAppMgrForDriver_NID, 0xCE356B2D, sceAppMgrGameDataMountForDriver_hook);
 
     if(sceAppMgrGameDataMountForDriver_hook_id < 0)
       FILE_GLOBAL_WRITE_LEN("Failed to init sceAppMgrGameDataMountForDriver_hook\n");
@@ -3241,11 +3471,22 @@ int initialize_hooks()
   npdrm_info.size = sizeof(tai_module_info_t);
   if(taiGetModuleInfoForKernel(KERNEL_PID, "SceNpDrm", &app_mgr_info) >= 0)
   {
-    sceNpDrmGetRifVitaKeyForDriver_hook_id = taiHookFunctionExportForKernel(KERNEL_PID, &sceNpDrmGetRifVitaKeyForDriver_hook_ref, "SceNpDrm", SceNpDrmForDriver_NID, 0x723322B5, sceNpDrmGetRifVitaKeyForDriver_hook);
+    //sceNpDrmGetRifVitaKeyForDriver_hook_id = taiHookFunctionExportForKernel(KERNEL_PID, &sceNpDrmGetRifVitaKeyForDriver_hook_ref, "SceNpDrm", SceNpDrmForDriver_NID, 0x723322B5, sceNpDrmGetRifVitaKeyForDriver_hook);
     if(sceNpDrmGetRifVitaKeyForDriver_hook_id < 0)
       FILE_GLOBAL_WRITE_LEN("Failed to init sceNpDrmGetRifVitaKeyForDriver_hook\n");
     else
       FILE_GLOBAL_WRITE_LEN("Init sceNpDrmGetRifVitaKeyForDriver_hook\n");
+  }
+
+  tai_module_info_t proc_mgr_info;
+  proc_mgr_info.size = sizeof(tai_module_info_t);
+  if(taiGetModuleInfoForKernel(KERNEL_PID, "SceProcessmgr", &proc_mgr_info) >= 0)
+  {
+    //sceKernelGetProcessAuthidForKernel_hook_id = taiHookFunctionImportForKernel(KERNEL_PID, &sceKernelGetProcessAuthidForKernel_hook_ref, "SceKernelModulemgr", SceProcessmgrForKernel_NID, 0xE4C83B0D, sceKernelGetProcessAuthidForKernel_hook);
+    if(sceKernelGetProcessAuthidForKernel_hook_id < 0)
+      FILE_GLOBAL_WRITE_LEN("Failed to init sceKernelGetProcessAuthidForKernel_hook\n");
+    else
+      FILE_GLOBAL_WRITE_LEN("Init sceKernelGetProcessAuthidForKernel_hook\n");
   }
 
   return 0;
@@ -3315,6 +3556,22 @@ int deinitialize_hooks()
     }
     
     sceNpDrmGetRifVitaKeyForDriver_hook_id = -1;
+  }
+
+  if(sceKernelGetProcessAuthidForKernel_hook_id >= 0)
+  {
+    int res = taiHookReleaseForKernel(sceKernelGetProcessAuthidForKernel_hook_id, sceKernelGetProcessAuthidForKernel_hook_ref);
+    
+    if(res < 0)
+    {
+      FILE_GLOBAL_WRITE_LEN("Failed to deinit sceKernelGetProcessAuthidForKernel_hook\n");
+    }
+    else
+    {
+      FILE_GLOBAL_WRITE_LEN("Deinit sceKernelGetProcessAuthidForKernel_hook\n");
+    }
+    
+    sceKernelGetProcessAuthidForKernel_hook_id = -1;
   }
 
   return 0;
