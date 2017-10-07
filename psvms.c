@@ -184,6 +184,7 @@ int get_card_string()
 #define SceAppMgrForDriver_NID 0xDCE180F8
 #define SceNpDrmForDriver_NID 0xD84DC44A
 #define SceProcessmgrForKernel_NID 0x7A69DE86
+#define SceSysclibForDriver_NID 0x7EE45391
 
 typedef int (execute_dmac5_command_0x01_01be0374_t)(char *src, char *dst, int size, int key_slot, int key_size, int arg_4);
 typedef int (execute_dmac5_command_0x02_8b4700cb_t)(char *src, char *dst, int size, int key_slot, int key_size, int arg_4);
@@ -225,6 +226,19 @@ typedef int (execute_dmac5_command_0x22_7d46768c_t)(char *src, char *dst, int si
 typedef int(sceAppMgrGameDataMountForDriver_t)(char* original_path, char* unk1, char* unk2, char* mount_point);
 typedef int(sceAppMgrUmountForDriver_t)(const char *mount_point);
 
+typedef struct lldiv_t
+{
+  SceInt64 quot;
+  SceInt64 rem;
+}lldiv_t;
+
+//__value_in_regs
+//typedef lldiv_t(__aeabi_ldivmod_t)(SceInt64 n, SceInt64 d);
+
+//http://infocenter.arm.com/help/topic/com.arm.doc.ihi0043d/IHI0043D_rtabi.pdf
+
+typedef SceInt64(__aeabi_ldivmod_t)(SceInt64 n, SceInt64 d);
+
 execute_dmac5_command_0x01_01be0374_t* execute_dmac5_command_0x01_01be0374 = 0;
 execute_dmac5_command_0x02_8b4700cb_t* execute_dmac5_command_0x02_8b4700cb = 0;
 
@@ -261,6 +275,8 @@ execute_dmac5_command_0x22_7d46768c_t* execute_dmac5_command_0x22_7d46768c = 0;
 
 sceAppMgrGameDataMountForDriver_t* sceAppMgrGameDataMountForDriver = 0;
 sceAppMgrUmountForDriver_t* sceAppMgrUmountForDriver = 0;
+
+__aeabi_ldivmod_t* __aeabi_ldivmod = 0;
 
 int initialize_functions()
 {
@@ -513,6 +529,16 @@ int initialize_functions()
   }
   
   FILE_GLOBAL_WRITE_LEN("set sceAppMgrUmountForDriver\n");
+
+  res = module_get_export_func(KERNEL_PID, "SceSysmem", SceSysclibForDriver_NID, 0x7554ab04, (uintptr_t*)&__aeabi_ldivmod);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to set __aeabi_ldivmod : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+    return -1;
+  }
+  
+  FILE_GLOBAL_WRITE_LEN("set __aeabi_ldivmod\n");
 
   return 0;
 }
@@ -3119,6 +3145,92 @@ int test_pfs()
   return 0;
 }
 
+int copy_encrypted_self_data()
+{
+  copy_file("ux0:/app/PCSC00082/eboot.bin", "ux0:dump/eboot.bin.enc", 0x1000);
+  return 0;
+}
+
+//============================================
+
+int call__aeabi_ldivmod(SceInt64 n, SceInt64 d, SceInt64* q, SceInt64* r)
+{
+  int n_lo = (n & 0x00000000FFFFFFFF);
+  int n_hi = (n & 0xFFFFFFFF00000000) >> 32;
+  int d_lo = (d & 0x00000000FFFFFFFF);
+  int d_hi = (d & 0xFFFFFFFF00000000) >> 32;
+  
+  int q_lo = 0;
+  int q_hi = 0;
+  int r_lo = 0;
+  int r_hi = 0;
+
+  //snprintf(sprintfBuffer, 256, "__aeabi_ldivmod : %x %x %x %x\n", n_lo, n_hi, d_lo, d_hi);
+  //FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+
+  //snprintf(sprintfBuffer, 256, "__aeabi_ldivmod : %x\n", __aeabi_ldivmod);
+  //FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+
+  asm("mov r0, %[_n_lo] \n\t"
+      "mov r1, %[_n_hi] \n\t"
+      "mov r2, %[_d_lo] \n\t"
+      "mov r3, %[_d_hi] \n\t"
+      "mov r4, %[_fun] \n\t"
+      "blx r4 \n\t"
+      "mov %[_q_lo], r0 \n\t"
+      "mov %[_q_hi], r1 \n\t"
+      "mov %[_r_lo], r2 \n\t"
+      "mov %[_r_hi], r3 \n\t"
+      : [_q_lo] "=r" (q_lo), [_q_hi] "=r" (q_hi), [_r_lo] "=r" (r_lo), [_r_hi] "=r" (r_hi)
+      : [_n_lo] "r"  (n_lo), [_n_hi] "r"  (n_hi), [_d_lo] "r"  (d_lo), [_d_hi]  "r" (d_hi), [_fun] "r" (__aeabi_ldivmod)
+      : "cc", "r0", "r1", "r2", "r3", "r4"
+      );
+      
+  //snprintf(sprintfBuffer, 256, "__aeabi_ldivmod : %x %x %x %x\n", q_lo, q_hi, r_lo, r_hi);
+  //FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+
+  *q = (((SceInt64)q_hi) << 32) | ((SceInt64)q_lo);
+  *r = (((SceInt64)r_hi) << 32) | ((SceInt64)r_lo);
+
+  return 0;
+}
+
+int test_sceSysclib_7554ab04()
+{
+  SceInt64 q = 0;
+  SceInt64 r = 0;
+  int res = call__aeabi_ldivmod(0x3500000077, 0x200000046, &q, &r);
+
+  snprintf(sprintfBuffer, 256, "__aeabi_ldivmod 0x3500000000 0x200000000 : %llx %llx\n", q, r); //1A
+  FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+
+  res = call__aeabi_ldivmod(0x7000000028, 0x1400000056, &q, &r);
+  
+    snprintf(sprintfBuffer, 256, "__aeabi_ldivmod 0x3500000000 0x200000000 : %llx %llx\n", q, r); //5
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+
+  //print_bytes((char*)call__aeabi_ldivmod, 0x100);
+
+  /*
+  SceInt64 res = __aeabi_ldivmod(0x3500000000, 0x200000000);
+  
+  snprintf(sprintfBuffer, 256, "__aeabi_ldivmod 0x3500000000 0x200000000 : %llx\n", res); //1A
+  FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+
+  res = __aeabi_ldivmod(0x3500000000, 0x3);
+  
+  snprintf(sprintfBuffer, 256, "__aeabi_ldivmod 0x3500000000 0x3 : %llx\n", res); //11AAAAAAAA
+  FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+
+  res = __aeabi_ldivmod(0x7000000000, 0x1400000000);
+  
+  snprintf(sprintfBuffer, 256, "__aeabi_ldivmod 0x7000000000 0x1400000000 : %llx\n", res); //5
+  FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  */
+
+  return 0;
+}
+
 //============================================
 
 tai_hook_ref_t sceSblAuthMgrSetDmac5Key_hook_ref;
@@ -3361,16 +3473,47 @@ SceUID sceSblAuthMgrParseSelfHeader_hook_id = -1;
 
 int g_ctr = 0;
 
+int write_binary_log(char* data, int size)
+{
+  SceUID out_fd = ksceIoOpen("ux0:/dump/psvms.bin", SCE_O_CREAT | SCE_O_APPEND | SCE_O_WRONLY, 0777);
+  
+  if(out_fd < 0)
+  {
+    FILE_GLOBAL_WRITE_LEN("Failed to open output file\n");
+    return -1;
+  }
+
+  ksceIoWrite(out_fd, data, size);
+
+  ksceIoClose(out_fd);
+
+  return 0;
+}
+
 int sceSblAuthMgrParseSelfHeader_hook(int ctx, char *self_header, int length, header_ctx *buffer)
 {
-  //snprintf(sprintfBuffer, 256, "before sceSblAuthMgrParseSelfHeader_hook %x %x %x %x\n", ctx, addr, length, buffer);
-  //FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  if(buffer > 0)
+  {
+    if(g_ctr < 1)
+    {
+      if(memcmp(known_klicensee, buffer->auth_ctx.klicensee, 0x10) == 0)
+      {
+        snprintf(sprintfBuffer, 256, "before sceSblAuthMgrParseSelfHeader_hook %x %x %x %x\n", ctx, self_header, length, buffer);
+        FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
 
+        //FILE_GLOBAL_WRITE_LEN("addr:\n");
+        write_binary_log(self_header, 0x1000);
+
+        //FILE_GLOBAL_WRITE_LEN("buffer:\n");
+        write_binary_log((char*)buffer, sizeof(header_ctx));
+        //g_ctr++;
+      }
+    }
+  }
+  
   int res = TAI_CONTINUE(int, sceSblAuthMgrParseSelfHeader_hook_ref, ctx, self_header, length, buffer);
 
-  snprintf(sprintfBuffer, 256, "after sceSblAuthMgrParseSelfHeader_hook %x %x %x %x %x\n", ctx, self_header, length, buffer, res);
-  FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
-
+  /*
   if(buffer > 0)
   {
     if(g_ctr < 1)
@@ -3382,24 +3525,26 @@ int sceSblAuthMgrParseSelfHeader_hook(int ctx, char *self_header, int length, he
       }
     }
   }
+  */
 
-  /*
   if(buffer > 0)
   {
-    if(g_ctr < 1)
+    if(g_ctr < 2)
     {
       if(memcmp(known_klicensee, buffer->auth_ctx.klicensee, 0x10) == 0)
       {
-        FILE_GLOBAL_WRITE_LEN("addr:\n");
-        print_bytes(self_header, 0xA0); //size is in length arg
+        snprintf(sprintfBuffer, 256, "after sceSblAuthMgrParseSelfHeader_hook %x %x %x %x %x\n", ctx, self_header, length, buffer, res);
+        FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
 
-        FILE_GLOBAL_WRITE_LEN("buffer:\n");
-        print_bytes(buffer->resp.data, 0x90);
+        //FILE_GLOBAL_WRITE_LEN("addr:\n");
+        write_binary_log(self_header, 0x1000);
+
+        //FILE_GLOBAL_WRITE_LEN("buffer:\n");
+        write_binary_log((char*)buffer, sizeof(header_ctx));
         //g_ctr++;
       }
     }
   }
-  */
 
   return res;
 }
@@ -3643,6 +3788,10 @@ int module_start(SceSize argc, const void *args)
   //test_dmac5_22_128_specific();
 
   //test_pfs();
+
+  //copy_encrypted_self_data();
+
+  test_sceSysclib_7554ab04();
 
   return SCE_KERNEL_START_SUCCESS;
 }
