@@ -3,6 +3,7 @@
 #include <psp2kern/kernel/cpu.h>
 #include <psp2kern/io/dirent.h>
 #include <psp2kern/io/fcntl.h>
+#include <psp2kern/kernel/threadmgr.h>
 
 #include <taihen.h>
 #include <module.h>
@@ -185,6 +186,7 @@ int get_card_string()
 #define SceNpDrmForDriver_NID 0xD84DC44A
 #define SceProcessmgrForKernel_NID 0x7A69DE86
 #define SceSysclibForDriver_NID 0x7EE45391
+#define SceThreadmgrForDriver_NID 0xE2C40624
 
 typedef int (execute_dmac5_command_0x01_01be0374_t)(char *src, char *dst, int size, int key_slot, int key_size, int arg_4);
 typedef int (execute_dmac5_command_0x02_8b4700cb_t)(char *src, char *dst, int size, int key_slot, int key_size, int arg_4);
@@ -239,6 +241,22 @@ typedef struct lldiv_t
 
 typedef SceInt64(__aeabi_ldivmod_t)(SceInt64 n, SceInt64 d);
 
+#pragma pack(push, 1)
+
+typedef struct SceKernelCondOptParam 
+{
+	SceSize size;
+} SceKernelCondOptParam;
+
+#pragma pack(pop)
+
+typedef SceUID (sceKernelCreateCondForDriver_t)(const char* name, SceUInt attr, SceUID mutexId, const SceKernelCondOptParam* option);
+typedef int (sceKernelDeleteCondForDriver_t)(SceUID cid);
+typedef int (sceKernelWaitCondForDriver_t)(SceUID condId, unsigned int *timeout);
+typedef int (sceKernelSignalCondForDriver_t)(SceUID condId);
+
+//------------
+
 execute_dmac5_command_0x01_01be0374_t* execute_dmac5_command_0x01_01be0374 = 0;
 execute_dmac5_command_0x02_8b4700cb_t* execute_dmac5_command_0x02_8b4700cb = 0;
 
@@ -277,6 +295,11 @@ sceAppMgrGameDataMountForDriver_t* sceAppMgrGameDataMountForDriver = 0;
 sceAppMgrUmountForDriver_t* sceAppMgrUmountForDriver = 0;
 
 __aeabi_ldivmod_t* __aeabi_ldivmod = 0;
+
+sceKernelCreateCondForDriver_t* sceKernelCreateCondForDriver = 0;
+sceKernelDeleteCondForDriver_t* sceKernelDeleteCondForDriver = 0;
+sceKernelWaitCondForDriver_t* sceKernelWaitCondForDriver = 0;
+sceKernelSignalCondForDriver_t* sceKernelSignalCondForDriver = 0;
 
 int initialize_functions()
 {
@@ -539,6 +562,46 @@ int initialize_functions()
   }
   
   FILE_GLOBAL_WRITE_LEN("set __aeabi_ldivmod\n");
+
+  res = module_get_export_func(KERNEL_PID, "SceKernelThreadMgr", SceThreadmgrForDriver_NID, 0xDB6CD34A, (uintptr_t*)&sceKernelCreateCondForDriver);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to set sceKernelCreateCondForDriver : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+    return -1;
+  }
+
+  FILE_GLOBAL_WRITE_LEN("set sceKernelCreateCondForDriver\n");
+
+  res = module_get_export_func(KERNEL_PID, "SceKernelThreadMgr", SceThreadmgrForDriver_NID, 0xAEE0D27C, (uintptr_t*)&sceKernelDeleteCondForDriver);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to set sceKernelDeleteCondForDriver : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+    return -1;
+  }
+
+  FILE_GLOBAL_WRITE_LEN("set sceKernelDeleteCondForDriver\n");
+
+  res = module_get_export_func(KERNEL_PID, "SceKernelThreadMgr", SceThreadmgrForDriver_NID, 0xCC7E027D, (uintptr_t*)&sceKernelWaitCondForDriver);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to set sceKernelWaitCondForDriver : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+    return -1;
+  }
+
+  FILE_GLOBAL_WRITE_LEN("set sceKernelWaitCondForDriver\n");
+
+  res = module_get_export_func(KERNEL_PID, "SceKernelThreadMgr", SceThreadmgrForDriver_NID, 0xAC616150, (uintptr_t*)&sceKernelSignalCondForDriver);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to set sceKernelSignalCondForDriver : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+    return -1;
+  }
+
+  FILE_GLOBAL_WRITE_LEN("set sceKernelSignalCondForDriver\n");
 
   return 0;
 }
@@ -3579,6 +3642,133 @@ int sceKernelGetProcessAuthidForKernel_hook(SceUID pid, process_auth_id_ctx* dat
   return res;
 }
 
+typedef struct CryptEngineData //size is 0x60
+{
+   const char* klicensee;
+   uint32_t salt0; // salt that is used to derive keys
+   uint32_t salt1; // salt that is used to derive keys
+   uint16_t type; // 0xC
+   uint16_t pmi_bcl_flag; // 0xE
+   
+   uint16_t key_id; // 0x10
+   uint16_t flag0; // 0x12
+   
+   uint32_t unk_14;
+   uint32_t unk_18;
+   uint32_t unk_1C;
+   
+   uint32_t unk_20;
+   uint32_t unk_24;
+   uint32_t block_size; //0x28
+   char key[0x10]; //0x2C
+   
+   char iv_xor_key[0x10]; //0x3C
+   
+   char hmac_key[0x14]; //0x4C
+
+   uint32_t unk_5C;
+
+}CryptEngineData;
+
+typedef struct CryptEngineSubctx //size is 0x58
+{
+   uint32_t unk_0;
+   uint32_t unk_4;
+   uint32_t opt_code; // 0x8 - if 3 then decrypt, if 4 then encrypt, if 2 then encrypt
+   CryptEngineData* data; // 0xC
+   
+   char* unk_10; // I DONT KNOW BUT I AM ASSUMING THAT THIS IS POINTER
+   uint32_t unk_14; // 0x14
+   uint32_t unk_18; // I DONT KNOW BUT I AM ASSUMING THAT THIS IS SIZE (based on tweak key derrivation)
+   uint32_t nBlocksTail;
+   
+   uint32_t unk_20;
+   uint32_t unk_24;
+   uint32_t unk_28; //0x28
+   uint32_t nBlocks; // 0x2C - also digest table index
+   
+   uint32_t unk_30;
+   uint32_t seed0_base; // 0x34
+   uint32_t dest_offset; // 0x38
+   uint32_t unk_3C; // 0x3C
+   
+   uint32_t tail_size; //0x40
+   uint32_t unk_44;
+   uint32_t unk_48; //0x48
+   char* signature_table; // 0x4C hmac sha1 digest table
+   
+   char* work_buffer0; // 0x50
+   char* work_buffer1; // 0x54
+   
+}CryptEngineSubctx;
+
+typedef struct CryptEngineWorkCtx //size is 0x18
+{
+   void* unk_0; // pointer to data 0x140 + 0x18 ?
+   void* unk_4; // pointer to data 0x140 + 0x18 ?
+   CryptEngineSubctx* subctx; // 0x8
+   uint32_t error; // 0xC set to 0 or error code after executing crypto task
+   
+   SceUID threadId; // = set with sceKernelGetThreadIdForDriver. used with ksceKernelSignalCondTo
+   uint32_t unk_14;
+   
+}CryptEngineWorkCtx;
+
+SceUID logThreadId = -1;
+
+SceUID req_lock = -1;
+SceUID resp_lock = -1;
+
+SceUID req_cond = -1;
+SceUID resp_cond = -1;
+
+tai_hook_ref_t scePfsCryptEngineThread_work_hook_ref;
+SceUID scePfsCryptEngineThread_work_hook_id = -1;
+
+CryptEngineWorkCtx g_work_ctx_copy;
+
+void send_request_wait_response()
+{
+  //send request
+  sceKernelSignalCondForDriver(req_cond);
+
+  //lock mutex
+  int res = ksceKernelLockMutex(resp_lock, 1, 0);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to ksceKernelLockMutex resp_lock : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  }
+
+  //wait for response
+  res = sceKernelWaitCondForDriver(resp_cond, 0);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to sceKernelWaitCondForDriver resp_cond : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  }
+
+  //unlock mutex
+  res = ksceKernelUnlockMutex(resp_lock, 1);
+  if(res < 0)
+  {
+    snprintf(sprintfBuffer, 256, "failed to ksceKernelUnlockMutex resp_lock : %x\n", res);
+    FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  }
+}
+
+void ScePfsCryptEngineThread_work_hook(CryptEngineWorkCtx* work_ctx)
+{
+  TAI_CONTINUE(void, scePfsCryptEngineThread_work_hook_ref, work_ctx);
+
+  if(work_ctx > 0)
+  {
+    memcpy(&g_work_ctx_copy, work_ctx, sizeof(CryptEngineWorkCtx));
+
+    send_request_wait_response();
+  }
+}
+
 int initialize_hooks()
 {
   tai_module_info_t sbl_auth_mgr_info;
@@ -3592,7 +3782,7 @@ int initialize_hooks()
     else
       FILE_GLOBAL_WRITE_LEN("Init sceSblAuthMgrSetDmac5Key_hook\n");
 
-    sceSblAuthMgrParseSelfHeader_hook_id = taiHookFunctionExportForKernel(KERNEL_PID, &sceSblAuthMgrParseSelfHeader_hook_ref, "SceSblAuthMgr", SceSblAuthMgrForKernel_NID, 0xf3411881, sceSblAuthMgrParseSelfHeader_hook);
+    //sceSblAuthMgrParseSelfHeader_hook_id = taiHookFunctionExportForKernel(KERNEL_PID, &sceSblAuthMgrParseSelfHeader_hook_ref, "SceSblAuthMgr", SceSblAuthMgrForKernel_NID, 0xf3411881, sceSblAuthMgrParseSelfHeader_hook);
 
     if(sceSblAuthMgrParseSelfHeader_hook_id < 0)
       FILE_GLOBAL_WRITE_LEN("Failed to init sceSblAuthMgrParseSelfHeader_hook\n");
@@ -3634,6 +3824,17 @@ int initialize_hooks()
       FILE_GLOBAL_WRITE_LEN("Init sceKernelGetProcessAuthidForKernel_hook\n");
   }
 
+  tai_module_info_t pfs_mgr_info;
+  pfs_mgr_info.size = sizeof(tai_module_info_t);
+  if(taiGetModuleInfoForKernel(KERNEL_PID, "ScePfsMgr", &pfs_mgr_info) >= 0)
+  {
+    scePfsCryptEngineThread_work_hook_id = taiHookFunctionOffsetForKernel(KERNEL_PID, &scePfsCryptEngineThread_work_hook_ref, pfs_mgr_info.modid, 0, 0xBF20, 1, ScePfsCryptEngineThread_work_hook);
+    if(scePfsCryptEngineThread_work_hook_id < 0)
+      FILE_GLOBAL_WRITE_LEN("Failed to init scePfsCryptEngineThread_work_hook\n");
+    else
+      FILE_GLOBAL_WRITE_LEN("Init scePfsCryptEngineThread_work_hook\n");
+  }
+  
   return 0;
 }
 
@@ -3719,6 +3920,157 @@ int deinitialize_hooks()
     sceKernelGetProcessAuthidForKernel_hook_id = -1;
   }
 
+  if(scePfsCryptEngineThread_work_hook_id >= 0)
+  {
+    int res = taiHookReleaseForKernel(scePfsCryptEngineThread_work_hook_id, scePfsCryptEngineThread_work_hook_ref);
+    
+    if(res < 0)
+    {
+      FILE_GLOBAL_WRITE_LEN("Failed to deinit scePfsCryptEngineThread_work_hook\n");
+    }
+    else
+    {
+      FILE_GLOBAL_WRITE_LEN("Deinit scePfsCryptEngineThread_work_hook\n");
+    }
+    
+    scePfsCryptEngineThread_work_hook_id = -1;
+  }
+
+  return 0;
+}
+
+int log_work(CryptEngineWorkCtx* work_ctx)
+{
+  /*
+  if(work_ctx > 0)
+  {
+    if(work_ctx->subctx > 0)
+    {
+      snprintf(sprintfBuffer, 256, "PFS work: operation: %x\n", work_ctx->subctx->opt_code);
+      FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+    }
+  }
+  */
+
+  FILE_GLOBAL_WRITE_LEN("log_work\n");
+
+  return 0;
+}
+
+int log_thread(SceSize args, void *argp)
+{
+  FILE_GLOBAL_WRITE_LEN("Started Log Thread\n");
+
+  while(1)
+  {
+    //lock mutex
+    int res = ksceKernelLockMutex(req_lock, 1, 0);
+    if(res < 0)
+    {
+      snprintf(sprintfBuffer, 256, "failed to ksceKernelLockMutex req_lock : %x\n", res);
+      FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+    }
+
+    //wait for request
+    res = sceKernelWaitCondForDriver(req_cond, 0);
+    if(res < 0)
+    {
+      snprintf(sprintfBuffer, 256, "failed to sceKernelWaitCondForDriver req_cond : %x\n", res);
+      FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+    }
+
+    //unlock mutex
+    res = ksceKernelUnlockMutex(req_lock, 1);
+    if(res < 0)
+    {
+      snprintf(sprintfBuffer, 256, "failed to ksceKernelUnlockMutex req_lock : %x\n", res);
+      FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+    }
+    
+    log_work(&g_work_ctx_copy);
+
+    //return response
+    sceKernelSignalCondForDriver(resp_cond);
+  }
+  
+  return 0; 
+}
+
+int initialize_log_threading()
+{
+  req_lock = ksceKernelCreateMutex("req_lock", 0, 0, 0);
+  #ifdef ENABLE_DEBUG_LOG
+  if(req_lock >= 0)
+    FILE_GLOBAL_WRITE_LEN("Created req_lock\n");
+  #endif
+
+  req_cond = sceKernelCreateCondForDriver("req_cond", 0, req_lock, 0);
+  #ifdef ENABLE_DEBUG_LOG
+  if(req_cond >= 0)
+    FILE_GLOBAL_WRITE_LEN("Created req_cond\n");
+  #endif
+
+  resp_lock = ksceKernelCreateMutex("resp_lock", 0, 0, 0);
+  #ifdef ENABLE_DEBUG_LOG
+  if(resp_lock >= 0)
+    FILE_GLOBAL_WRITE_LEN("Created resp_lock\n");
+  #endif
+
+  resp_cond = sceKernelCreateCondForDriver("resp_cond", 0, resp_lock, 0);
+  #ifdef ENABLE_DEBUG_LOG
+  if(resp_cond >= 0)
+    FILE_GLOBAL_WRITE_LEN("Created resp_cond\n");
+  #endif
+  
+  logThreadId = ksceKernelCreateThread("LogThread", &log_thread, 0x64, 0x1000, 0, 0, 0);
+
+  if(logThreadId >= 0)
+  {
+    #ifdef ENABLE_DEBUG_LOG
+    FILE_GLOBAL_WRITE_LEN("Created Log Thread\n");
+    #endif
+
+    int res = ksceKernelStartThread(logThreadId, 0, 0);
+  }
+
+  return 0;
+}
+
+int deinitialize_log_threading()
+{
+  if(logThreadId >= 0)
+  {
+    int waitRet = 0;
+    ksceKernelWaitThreadEnd(logThreadId, &waitRet, 0);
+    
+    int delret = ksceKernelDeleteThread(logThreadId);
+    logThreadId = -1;
+  }
+
+  if(req_cond >= 0)
+  {
+    sceKernelDeleteCondForDriver(req_cond);
+    req_cond = -1;
+  }
+  
+  if(resp_cond >= 0)
+  {
+    sceKernelDeleteCondForDriver(resp_cond);
+    resp_cond = -1;
+  }
+
+  if(req_lock >= 0)
+  {
+    ksceKernelDeleteMutex(req_lock);
+    req_lock = -1;
+  }
+
+  if(resp_lock >= 0)
+  {
+    ksceKernelDeleteMutex(resp_lock);
+    resp_lock = -1;
+  }
+
   return 0;
 }
 
@@ -3726,10 +4078,13 @@ int deinitialize_hooks()
 
 int module_start(SceSize argc, const void *args) 
 {
-  if(initialize_hooks() < 0)
+  if(initialize_functions() < 0)
     return SCE_KERNEL_START_SUCCESS;
 
-  if(initialize_functions() < 0)
+  if(initialize_log_threading() < 0)
+    return SCE_KERNEL_START_SUCCESS;
+
+  if(initialize_hooks() < 0)
     return SCE_KERNEL_START_SUCCESS;
 
   if(init_keyring() < 0)
@@ -3791,7 +4146,7 @@ int module_start(SceSize argc, const void *args)
 
   //copy_encrypted_self_data();
 
-  test_sceSysclib_7554ab04();
+  //test_sceSysclib_7554ab04();
 
   return SCE_KERNEL_START_SUCCESS;
 }
@@ -3804,6 +4159,8 @@ int module_stop(SceSize argc, const void *args)
   deinitialize_hooks();
 
   deinit_keyring();
+
+  deinitialize_log_threading();
 
   return SCE_KERNEL_STOP_SUCCESS;
 }
