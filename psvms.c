@@ -3190,8 +3190,8 @@ int test_pfs()
 
   list_pfs_mount_point("ux0:app/PCSC00082/sce_sys");
 
-  //int cpy_res = copy_file("ux0:app/PCSC00082/sce_sys/icon0.png", "ux0:dump/icon0.png", 0);
-  int cpy_res = copy_file("ux0:app/PCSC00082/eboot.bin", "ux0:dump/eboot.bin", COPY_BLOCK_SIZE * 0x10);
+  int cpy_res = copy_file("ux0:app/PCSC00082/sce_sys/icon0.png", "ux0:dump/icon0.png", 0);
+  //int cpy_res = copy_file("ux0:app/PCSC00082/eboot.bin", "ux0:dump/eboot.bin", COPY_BLOCK_SIZE * 0x10);
   if(cpy_res < 0)
   {
     FILE_GLOBAL_WRITE_LEN("Failed to copy file\n");
@@ -3726,6 +3726,20 @@ tai_hook_ref_t scePfsCryptEngineThread_work_hook_ref;
 SceUID scePfsCryptEngineThread_work_hook_id = -1;
 
 CryptEngineWorkCtx g_work_ctx_copy;
+CryptEngineSubctx g_work_subctx_copy;
+CryptEngineData g_work_data_copy;
+
+char g_png_magic[8] = {0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
+
+char g_work_buffer0[0x8000];
+char g_work_buffer1[0x8000];
+char g_work_signatures[0x8000];
+
+char g_work_before_buffer0[0x8000];
+char g_work_before_buffer1[0x8000];
+
+int g_cryptEngineRequest = 0;
+int g_cryptEngineRequestCount = 0;
 
 void send_request_wait_response()
 {
@@ -3757,16 +3771,115 @@ void send_request_wait_response()
   }
 }
 
-void ScePfsCryptEngineThread_work_hook(CryptEngineWorkCtx* work_ctx)
+int is_buffer_png(CryptEngineWorkCtx* work_ctx)
 {
-  TAI_CONTINUE(void, scePfsCryptEngineThread_work_hook_ref, work_ctx);
-
   if(work_ctx > 0)
   {
-    memcpy(&g_work_ctx_copy, work_ctx, sizeof(CryptEngineWorkCtx));
+    if(work_ctx->subctx->work_buffer0 > 0)
+    {
+      if(memcmp(g_png_magic, work_ctx->subctx->work_buffer0, 0x8) == 0)
+        return 1;
+    }
 
-    send_request_wait_response();
+    if(work_ctx->subctx->work_buffer1 > 0)
+    {
+      if(memcmp(g_png_magic, work_ctx->subctx->work_buffer1, 0x8) == 0)
+        return 1;
+    }
   }
+  
+  return 0;
+}
+
+void ScePfsCryptEngineThread_work_hook(CryptEngineWorkCtx* work_ctx)
+{
+  if(g_cryptEngineRequest == 0)
+  {
+    if(work_ctx > 0)
+    {
+      if(work_ctx->subctx > 0)
+      {
+        if(work_ctx->subctx->work_buffer0 > 0)
+        {
+          memcpy(g_work_before_buffer0, work_ctx->subctx->work_buffer0, 0x3000);
+        }
+
+        if(work_ctx->subctx->work_buffer1 > 0)
+        {
+          memcpy(g_work_before_buffer1, work_ctx->subctx->work_buffer1, 0x3000);
+        }
+      }
+    }
+  }
+
+  TAI_CONTINUE(void, scePfsCryptEngineThread_work_hook_ref, work_ctx);
+
+  if(g_cryptEngineRequest == 0)
+  {
+    if(is_buffer_png(work_ctx) > 0)
+    {
+      if(work_ctx > 0)
+      {
+        memcpy(&g_work_ctx_copy, work_ctx, sizeof(CryptEngineWorkCtx));
+
+        if(work_ctx->subctx > 0)
+        {
+          memcpy(&g_work_subctx_copy, work_ctx->subctx, sizeof(CryptEngineSubctx));
+          g_work_ctx_copy.subctx = &g_work_subctx_copy;
+
+          if(work_ctx->subctx->data > 0)
+          {
+            memcpy(&g_work_data_copy, work_ctx->subctx->data, sizeof(CryptEngineData));
+            g_work_subctx_copy.data = &g_work_data_copy;
+          }
+          else
+          {
+            g_work_subctx_copy.data = 0;
+          }
+
+          if(work_ctx->subctx->work_buffer0 > 0)
+          {
+            memcpy(g_work_buffer0, work_ctx->subctx->work_buffer0, 0x3000);
+            g_work_subctx_copy.work_buffer0 = g_work_buffer0;
+          }
+          else
+          {
+            g_work_subctx_copy.work_buffer0 = 0;
+          }
+
+          if(work_ctx->subctx->work_buffer1 > 0)
+          {
+            memcpy(g_work_buffer1, work_ctx->subctx->work_buffer1, 0x3000);
+            g_work_subctx_copy.work_buffer1 = g_work_buffer1;
+          }
+          else
+          {
+            g_work_subctx_copy.work_buffer1 = 0;
+          }
+
+          if(work_ctx->subctx->signature_table > 0)
+          {
+            memcpy(g_work_signatures, work_ctx->subctx->signature_table, 0x14 * work_ctx->subctx->nBlocks);
+            g_work_subctx_copy.signature_table = g_work_signatures;
+          }
+          else
+          {
+            g_work_subctx_copy.signature_table = 0;
+          }
+        }
+        else
+        {
+          g_work_ctx_copy.subctx = 0;
+        }
+
+        g_cryptEngineRequest = 1;
+    
+        //send_request_wait_response();
+      }
+    }
+  }
+
+  g_cryptEngineRequestCount++;
 }
 
 int initialize_hooks()
@@ -3941,18 +4054,62 @@ int deinitialize_hooks()
 
 int log_work(CryptEngineWorkCtx* work_ctx)
 {
-  /*
-  if(work_ctx > 0)
+  if(work_ctx->subctx > 0)
   {
-    if(work_ctx->subctx > 0)
+    if(work_ctx->subctx->opt_code == 3)
     {
-      snprintf(sprintfBuffer, 256, "PFS work: operation: %x\n", work_ctx->subctx->opt_code);
+      //snprintf(sprintfBuffer, 256, "operation: %x\n", work_ctx->subctx->opt_code);
+      //FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  
+      //snprintf(sprintfBuffer, 256, "nBlocksTail: %x\n", work_ctx->subctx->nBlocksTail);
+      //FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  
+      snprintf(sprintfBuffer, 256, "nBlocks: %x\n", work_ctx->subctx->nBlocks);
       FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  
+      //snprintf(sprintfBuffer, 256, "seed0_base: %x\n", work_ctx->subctx->seed0_base);
+      //FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  
+      snprintf(sprintfBuffer, 256, "tail_size: %x\n", work_ctx->subctx->tail_size);
+      FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+
+      if(work_ctx->subctx->data > 0)
+      {
+        snprintf(sprintfBuffer, 256, "block_size: %x\n", work_ctx->subctx->data->block_size);
+        FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  
+        //snprintf(sprintfBuffer, 256, "salt0: %x\n", work_ctx->subctx->data->salt0);
+        //FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+  
+        //snprintf(sprintfBuffer, 256, "salt1: %x\n", work_ctx->subctx->data->salt1);
+        //FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+
+        int bitSize = (int)work_ctx->subctx->data->type - 2;
+
+        snprintf(sprintfBuffer, 256, "bitSize: %x\n", bitSize);
+        FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
+      }
+
+      if(work_ctx->subctx->work_buffer0 > 0)
+      {
+        write_binary_log(g_work_before_buffer0, 0x3000);
+
+        write_binary_log(work_ctx->subctx->work_buffer0, 0x3000);
+      }
+
+      if(work_ctx->subctx->work_buffer1 > 0)
+      {
+        write_binary_log(g_work_before_buffer1, 0x3000);
+
+        write_binary_log(work_ctx->subctx->work_buffer1, 0x3000);
+      }
+
+      if(work_ctx->subctx->signature_table > 0)
+      {
+        write_binary_log(work_ctx->subctx->signature_table, work_ctx->subctx->nBlocks * 0x20); //using 0x20 just to align the output
+      }
     }
   }
-  */
-
-  FILE_GLOBAL_WRITE_LEN("log_work\n");
 
   return 0;
 }
@@ -3963,6 +4120,7 @@ int log_thread(SceSize args, void *argp)
 
   while(1)
   {
+    /*
     //lock mutex
     int res = ksceKernelLockMutex(req_lock, 1, 0);
     if(res < 0)
@@ -3986,12 +4144,30 @@ int log_thread(SceSize args, void *argp)
       snprintf(sprintfBuffer, 256, "failed to ksceKernelUnlockMutex req_lock : %x\n", res);
       FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
     }
+    */
     
-    log_work(&g_work_ctx_copy);
+    if(g_cryptEngineRequest > 0)
+    {
+      //need to print the variables or they get optimized ?
+      snprintf(sprintfBuffer, 256, "PFS work call count: %x %x\n", g_cryptEngineRequest, g_cryptEngineRequestCount);
+      FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
 
+      log_work(&g_work_ctx_copy);
+
+      g_cryptEngineRequest = 0;
+    }
+
+    //ksceKernelDelayThread(1 * 1000 * 1); //looks reliable
+    //ksceKernelDelayThread(1 * 100 * 1); //looks reliable
+    ksceKernelDelayThread(10);
+
+    /*
     //return response
     sceKernelSignalCondForDriver(resp_cond);
+    */
   }
+
+  FILE_GLOBAL_WRITE_LEN("Exited Log Thread\n");
   
   return 0; 
 }
@@ -3999,36 +4175,26 @@ int log_thread(SceSize args, void *argp)
 int initialize_log_threading()
 {
   req_lock = ksceKernelCreateMutex("req_lock", 0, 0, 0);
-  #ifdef ENABLE_DEBUG_LOG
   if(req_lock >= 0)
     FILE_GLOBAL_WRITE_LEN("Created req_lock\n");
-  #endif
 
   req_cond = sceKernelCreateCondForDriver("req_cond", 0, req_lock, 0);
-  #ifdef ENABLE_DEBUG_LOG
   if(req_cond >= 0)
     FILE_GLOBAL_WRITE_LEN("Created req_cond\n");
-  #endif
 
   resp_lock = ksceKernelCreateMutex("resp_lock", 0, 0, 0);
-  #ifdef ENABLE_DEBUG_LOG
   if(resp_lock >= 0)
     FILE_GLOBAL_WRITE_LEN("Created resp_lock\n");
-  #endif
 
   resp_cond = sceKernelCreateCondForDriver("resp_cond", 0, resp_lock, 0);
-  #ifdef ENABLE_DEBUG_LOG
   if(resp_cond >= 0)
     FILE_GLOBAL_WRITE_LEN("Created resp_cond\n");
-  #endif
   
   logThreadId = ksceKernelCreateThread("LogThread", &log_thread, 0x64, 0x1000, 0, 0, 0);
 
   if(logThreadId >= 0)
   {
-    #ifdef ENABLE_DEBUG_LOG
     FILE_GLOBAL_WRITE_LEN("Created Log Thread\n");
-    #endif
 
     int res = ksceKernelStartThread(logThreadId, 0, 0);
   }
@@ -4142,7 +4308,10 @@ int module_start(SceSize argc, const void *args)
   //test_dmac5_21_128_specific();
   //test_dmac5_22_128_specific();
 
-  //test_pfs();
+  test_pfs();
+
+  //snprintf(sprintfBuffer, 256, "PFS work call count: %x\n", g_cryptEngineRequestCount);
+  //FILE_GLOBAL_WRITE_LEN(sprintfBuffer);
 
   //copy_encrypted_self_data();
 
